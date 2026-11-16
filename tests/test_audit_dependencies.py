@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from audit_dependencies import classify_license, cargo_records, load_decisions, lockfile_records
+from audit_dependencies import (classify_license, cargo_records, load_decisions,
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -69,6 +70,51 @@ class LicenseAuditTests(unittest.TestCase):
         verified = dict(base, conditions_verified=True)
         self.assertEqual("APPROVED_WITH_CONDITIONS", cargo_records(metadata, "fixture",
                          {"cargo:lib:1.0.0": verified})[0]["status"])
+
+    def test_merge_cargo_records_unions_features_and_context_evidence(self):
+        rows = [
+            {"package_id": "pkg 1.0.0", "name": "pkg", "version": "1.0.0",
+             "dependency_type": "transitive", "enabled_features": ["tls"],
+             "dependency_kinds": ["normal"], "targets": [["lib"]], "license": "MIT",
+             "license_evidence": []},
+            {"package_id": "pkg 1.0.0", "name": "pkg", "version": "1.0.0",
+             "dependency_type": "direct", "enabled_features": ["std"],
+             "dependency_kinds": ["build"], "targets": [["bin"]], "license": "MIT",
+             "license_evidence": []},
+        ]
+        merged = merge_cargo_records(rows)
+        self.assertEqual(1, len(merged))
+        self.assertEqual("direct", merged[0]["dependency_type"])
+        self.assertEqual(["std", "tls"], merged[0]["enabled_features"])
+        self.assertEqual(["build", "normal"], merged[0]["dependency_kinds"])
+
+    def test_asset_and_submodule_inventory_is_not_approved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "fonts").mkdir()
+            (root / "fonts" / "sample.ttf").write_bytes(b"font-data")
+            (root / "vendor" / "lib").mkdir(parents=True)
+            (root / "vendor" / "lib" / "lib.c").write_text("/* upstream */", encoding="utf-8")
+            (root / "generated").mkdir()
+            (root / "generated" / "schema.rs").write_text("// generated", encoding="utf-8")
+            (root / "LICENSE").write_text("MPL-2.0", encoding="utf-8")
+            (root / ".gitmodules").write_text(
+                '[submodule "external"]\n path = external/lib\n url = https://example.invalid/lib.git\n',
+                encoding="utf-8")
+            assets, provenance = scan_assets(root, "fixture")
+            self.assertEqual({"font", "vendored_source", "generated_source"},
+                             {item["category"] for item in assets})
+            self.assertTrue(all(item["status"] != "PASS" for item in assets))
+            self.assertTrue(any(item.get("sha256") for item in provenance))
+            self.assertTrue(any(item.get("url") == "https://example.invalid/lib.git" for item in provenance))
+
+    def test_manifest_discovery_finds_multiple_ecosystems(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text("[project]\nname='fixture'\n", encoding="utf-8")
+            (root / "settings.gradle.kts").write_text("", encoding="utf-8")
+            found = scan_manifests(root, "fixture")
+            self.assertEqual({"python", "gradle"}, {item["ecosystem"] for item in found})
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
