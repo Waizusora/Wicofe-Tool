@@ -270,6 +270,29 @@
       ],
       "security_status": "NOT_ASSESSED",
       "maintenance_status": "NOT_ASSESSED"
+    },
+    "rust-toolchain:rustc:1.100.0": {
+      "name": "Rust toolchain",
+      "ref": "1.100.0",
+      "source_commit": "0ef1bc386059596dada8fb65b50425aab2ea637a",
+      "license": "MIT OR Apache-2.0",
+      "upstream_url": "https://github.com/rust-lang/rust",
+      "license_evidence": [
+        {
+          "url": "https://github.com/rust-lang/rust/blob/0ef1bc386059596dada8fb65b50425aab2ea637a/LICENSE-MIT",
+          "blob_sha": "a2070c4be7acd5316f8d0357ca3c12419a2f3c62"
+        },
+        {
+          "url": "https://github.com/rust-lang/rust/blob/0ef1bc386059596dada8fb65b50425aab2ea637a/LICENSE-APACHE",
+          "blob_sha": "1b5ec8b78e237b5c3b3d812a7c0a6589d0f7161d"
+        },
+        {
+          "url": "https://github.com/rust-lang/rust/blob/0ef1bc386059596dada8fb65b50425aab2ea637a/COPYRIGHT",
+          "kind": "bundled-component-notices"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
     }
   }
 }
