@@ -33,3 +33,15 @@ Initial repository baseline. No complete tool suite is claimed.
 ## License
 
 Original Wicofe code is intended to use MPL-2.0. Third-party dependencies retain their own licenses and notices.
+
+## Initial tooling
+
+- [Project metadata checker](scripts/check_project_metadata.py) verifies that supplied local repository directories contain non-empty `README.md` and `LICENSE` files.
+
+Run it from a local checkout:
+
+```sh
+python3 scripts/check_project_metadata.py ../Wicofe-Kernel ../Wicofe-ABI ../Wicofe-Lib
+```
+
+This is a baseline check only. It does not validate SPDX expressions, transitive dependency licenses, CI configuration, or legal compatibility.
