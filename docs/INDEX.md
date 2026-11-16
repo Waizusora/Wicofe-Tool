@@ -4,7 +4,7 @@ This directory documents project-wide development, maintenance, validation, and 
 
 ## Validation tools
 - [Repository documentation validator](REPOSITORY_DOCUMENTATION_VALIDATOR.md) — local Markdown link, anchor, workspace-safety and forbidden-term checks.
-- [Repository inventory validator](REPOSITORY_INVENTORY_VALIDATOR.md) — compares a local checkout workspace with the canonical 29-repository inventory.
+- [Repository inventory validator](REPOSITORY_INVENTORY_VALIDATOR.md) — compares a local checkout workspace with the canonical 29-repository inventory.\n- [Dependency License Auditor](DEPENDENCY_LICENSE_AUDITOR.md) — resolves Cargo dependency metadata, inventories manifests, applies human-scoped license decisions and fails closed on unresolved evidence.\n- [Cross-repository dependency audit workflow](../.github/workflows/cross-repository-dependency-audit.yml) — scheduled/manual audit of all 29 repositories with evidence artifacts.
 
 ## Architecture
 - [Developer tooling architecture 0.1](DEVELOPER_TOOLING_ARCHITECTURE_0.1.md) — draft design for shared utilities, CLI conventions, safe execution, diagnostics and testing.
