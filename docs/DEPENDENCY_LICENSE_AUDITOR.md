@@ -21,9 +21,11 @@ python3 scripts/audit_dependencies.py --workspace ../Wicofe-Kernel \
 
 Without Cargo metadata, Cargo.lock entries are still inventoried, but their license is UNKNOWN. A lockfile does not contain authoritative license declarations.
 
-## Decision registry
+## Decision and repository-coverage registries
 
-`config/dependency_license_decisions.example.json` is an empty template. Copy it to a controlled decision file and add a scoped human decision only after review. Each entry is keyed by `cargo:NAME:VERSION` and requires status, reviewer, approver, evidence, scope and conditions. LGPL entries additionally require `conditions_verified: true` after a human verifies the applicable source/relinking, notices, distribution and replacement obligations; an approval record without that field remains NEEDS_REVIEW. The scanner validates the presence of these fields; it does not authenticate reviewers, interpret legal terms or grant approval.
+`config/dependency_license_decisions.example.json` is an empty template. Copy it to a controlled decision file and add a scoped human decision only after review.
+
+`config/repository_dependency_coverage.example.json` records human-reviewed repositories where no dependency manifests are present. An empty repository is UNKNOWN by default; it is not silently treated as dependency-free. A coverage entry must state `reviewed_no_dependencies`, reviewer, approver, evidence, scope and conditions. This is a coverage attestation, not a license approval. Each entry is keyed by `cargo:NAME:VERSION` and requires status, reviewer, approver, evidence, scope and conditions. LGPL entries additionally require `conditions_verified: true` after a human verifies the applicable source/relinking, notices, distribution and replacement obligations; an approval record without that field remains NEEDS_REVIEW. The scanner validates the presence of these fields; it does not authenticate reviewers, interpret legal terms or grant approval.
 
 GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes APPROVED_WITH_CONDITIONS only when a scoped decision exists. Other licenses require an explicit decision before PASS. Unknown or missing license metadata remains UNKNOWN.
 
@@ -49,4 +51,4 @@ python3 -m unittest discover -s tests -v
 
 ## CI enforcement
 
-The workflow runs unit tests and strict inventory on the Wicofe-Tools checkout. This is not yet a 29-repository release gate. Cross-repository enforcement must provide checked-out repositories and Cargo metadata for each supported feature/target matrix, and must reconcile the final image SBOM before release.
+The local workflow runs unit tests and produces an informational inventory. The cross-repository workflow checks out all 29 repositories and runs strict enforcement; repositories with no manifests remain UNKNOWN until a human coverage attestation is supplied. This workflow is not yet wired into the Wicofe-Build release pipeline. Cargo feature/target matrices and final image SBOM reconciliation are still required before release.
