@@ -29,7 +29,7 @@ GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes AP
 
 ## Current support and limitations
 
-- Cargo: resolved direct/transitive graph from `cargo metadata`; package features and metadata recorded.
+- Cargo: resolved direct/transitive graph from `cargo metadata`; package features, dependency kinds, source identifiers, checksums and upstream license-file hashes recorded. The cross-repository workflow resolves missing lockfiles in its disposable checkout and uploads the generated lockfiles as audit evidence; this does not add lockfiles to source repositories.
 - Cargo.lock alone: package/version/source/checksum inventory only; license UNKNOWN.
 - npm, pnpm, Yarn, Go, Maven, Gradle, CMake, Meson and Make: manifest discovery only; resolver integration is pending and strict mode blocks unresolved ecosystems.
 - Vendored source, submodules, compiler toolchains, firmware, fonts, codecs, generated assets, binary payloads and final images require separate evidence/inventory; this initial tool does not certify them.
