@@ -40,7 +40,7 @@ GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes AP
 - Cargo.lock alone: package/version/source/checksum inventory only; license UNKNOWN.
 - npm, pnpm, Yarn, Go, Maven, Gradle, CMake, Meson and Make: manifest discovery only; resolver integration is pending and strict mode blocks unresolved ecosystems.
 - Vendored source, submodules, compiler toolchains, firmware, fonts, codecs, generated assets, binary payloads and final images require separate evidence/inventory; this initial tool does not certify them.
-- SPDX expressions are classified conservatively for policy triggers, not fully parsed or legally interpreted.
+- SPDX/Debian license expressions are classified conservatively for policy triggers, not fully parsed or legally interpreted. GPL/AGPL-only or required branches are REJECTED. An expression with a non-GPL/AGPL OR branch (for example GPL OR BSD or GPL OR LGPL) becomes NEEDS_REVIEW until a human explicitly selects an exact branch; the auditor never chooses an alternative. AND expressions that require GPL/AGPL remain REJECTED. Selecting LGPL still requires verified LGPL conditions and explicit approval.
 
 ## Exit behavior
 
