@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from audit_dependencies import POLICY_VERSION, classify_license
+from audit_dependencies import (POLICY_VERSION, classify_license, license_alternatives,
+                                license_nonprohibited_alternatives)
 
 
 def read_package_delta(path: Path) -> list[dict[str, str]]:
@@ -74,9 +75,18 @@ def copyright_metadata(root: Path, package: dict[str, str]) -> dict[str, Any]:
         category, status = "LGPL", "NEEDS_REVIEW"
     else:
         category, status = "OTHER_REVIEW", "NEEDS_REVIEW"
+    primary_permissive_alternatives = sorted({
+        branch for expression in primary_licenses for branch in license_alternatives(expression)
+    })
+    primary_nonprohibited_alternatives = sorted({
+        branch for expression in primary_licenses
+        for branch in license_nonprohibited_alternatives(expression)
+    })
     return {
         **package, "upstream_name": upstream_name, "source": source,
         "license_expressions": licenses, "primary_license_expressions": primary_licenses,
+        "primary_license_alternatives": primary_permissive_alternatives,
+        "primary_license_nonprohibited_alternatives": primary_nonprohibited_alternatives,
         "license_category": category, "status": status,
         "license_evidence": [{
             "kind": "debian_copyright", "path": str(path),
