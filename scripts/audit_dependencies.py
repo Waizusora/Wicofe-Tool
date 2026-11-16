@@ -617,7 +617,7 @@ def main(argv: list[str] | None = None) -> int:
             statuses[item["status"]] = statuses.get(item["status"], 0) + 1
         cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
         unresolved = [m for m in manifests if m["ecosystem"] not in {"cargo", "cargo-lock"}]
-        if cargo_manifest_count != len(metadata_paths):
+        if len(metadata_paths) < cargo_manifest_count:
             unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
         if not manifests:
             coverage_status = "REVIEWED_NO_DEPENDENCIES" if coverage_decision else "UNKNOWN"
