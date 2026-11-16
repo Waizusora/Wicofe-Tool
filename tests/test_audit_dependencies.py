@@ -173,7 +173,8 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "Dockerfile").write_text("FROM debian:stable-slim\n", encoding="utf-8")
             scripts, dependencies = scan_build_scripts(root, "fixture")
             self.assertEqual(2, len(scripts))
-            self.assertEqual(1, len(scripts[0]["external_command_matches"]))
+            build_script = next(item for item in scripts if item["path"] == "build.sh")
+            self.assertEqual(1, len(build_script["external_command_matches"]))
             self.assertEqual({"build-script-command", "container-image"},
                              {item["ecosystem"] for item in dependencies})
             self.assertTrue(all(item["status"] == "UNKNOWN" for item in dependencies))
