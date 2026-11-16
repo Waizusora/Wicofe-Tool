@@ -265,7 +265,12 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         elif category == "LGPL_OPTIONAL_ALTERNATIVE":
             selected = decision.get("selected_license") if decision else None
             normalized = {branch.upper() for branch in safe_alternatives}
-            status = "PASS" if decision and selected and selected.upper() in normalized else "NEEDS_REVIEW"
+            if decision and selected and selected.upper() in normalized:
+                status = "PASS"
+            elif decision and selected and "LGPL" in selected.upper() and decision.get("conditions_verified"):
+                status = "APPROVED_WITH_CONDITIONS"
+            else:
+                status = "NEEDS_REVIEW"
         elif decision:
             status = "PASS"
         else:
