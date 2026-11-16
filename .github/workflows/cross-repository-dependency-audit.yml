@@ -62,7 +62,8 @@ jobs:
             for manifest in "${manifests[@]}"; do
               index=$((index + 1))
               metadata="reports/cargo-metadata/$repo-$index.json"
-              if cargo metadata --format-version 1 --locked --manifest-path "$manifest" > "$metadata"; then
+              # If no committed lockfile exists, Cargo resolves a transient lockfile in this CI checkout.
+              if cargo metadata --format-version 1 --manifest-path "$manifest" > "$metadata"; then
                 args+=(--cargo-metadata "$metadata")
               else
                 echo "BLOCKED: Cargo metadata resolution failed: $repo / $manifest"
@@ -70,6 +71,13 @@ jobs:
               fi
             done
             python Wicofe-Tools/scripts/audit_dependencies.py "${args[@]}" || failed=1
+            if [ -d "$root" ]; then
+              while IFS= read -r -d '' lockfile; do
+                relative="${lockfile#"$root"/}"
+                mkdir -p "reports/cargo-metadata/$repo-lockfiles/$(dirname "$relative")"
+                cp "$lockfile" "reports/cargo-metadata/$repo-lockfiles/$relative"
+              done < <(find "$root" -type f -name Cargo.lock -not -path '*/.git/*' -not -path '*/target/*' -print0)
+            fi
           done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
           if [ "$failed" -ne 0 ]; then
             echo "BLOCKED: one or more repositories have unresolved or unapproved dependencies."
