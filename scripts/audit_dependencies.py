@@ -309,7 +309,12 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
         ("pip-install", re.compile(r"\bpip(?:3)?\s+install\b", re.IGNORECASE)),
         ("maven", re.compile(r"\bmvn\b", re.IGNORECASE)),
         ("gradle", re.compile(r"\bgradle\b", re.IGNORECASE)),
-        ("cmake-fetch", re.compile(r"\b(?:FetchContent_Declare|ExternalProject_Add|file\s*\(\s*DOWNLOAD)\b", re.IGNORECASE)),
+        ("cmake-fetch", re.compile(r"\b(?:FetchContent_Declare|ExternalProject_Add|file\s*\(\s*DOWNLOAD)", re.IGNORECASE)),
+        ("rustup-install", re.compile(r"\brustup\s+(?:target|toolchain)\s+add\b", re.IGNORECASE)),
+        ("go-install", re.compile(r"\bgo\s+install\b", re.IGNORECASE)),
+        ("git-submodule", re.compile(r"\bgit\s+submodule\s+(?:add|update)\b", re.IGNORECASE)),
+        ("apk-install", re.compile(r"\bapk\s+add\b", re.IGNORECASE)),
+        ("zypper-install", re.compile(r"\bzypper\s+install\b", re.IGNORECASE)),
     ]
     for path in sorted(workspace.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
@@ -325,6 +330,8 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
         rel = str(path.relative_to(workspace))
         matches = []
         for line_number, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#"):
+                continue
             for label, pattern in external_patterns:
                 if pattern.search(line):
                     matches.append({"command": label, "line": line_number, "text": line.strip()[:300]})
@@ -349,16 +356,6 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
                 match = re.match(r"^\s*FROM\s+(?:--platform=\S+\s+)?([^\s]+)", line, re.IGNORECASE)
                 if match and match.group(1).lower() != "scratch":
                     image = match.group(1)
-                    dependencies.append({
-                        "repository": repository, "ecosystem": "container-image",
-                        "name": image, "version": "tag-or-digest-not-verified",
-                        "package_id": f"container-image:{image}",
-                        "license": None, "license_category": "UNKNOWN",
-                        "license_evidence": [{"kind": "docker_from", "path": rel, "line": line_number}],
-                        "dependency_type": "build-time", "enabled_features": [],
-                        "status": "UNKNOWN", "distribution": "container base image; final inclusion unknown",
-                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
-                    })
         if path.name in {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}:
             for line_number, line in enumerate(content.splitlines(), start=1):
                 match = re.match(r"^\s*image:\s*([^\s#]+)", line, re.IGNORECASE)
