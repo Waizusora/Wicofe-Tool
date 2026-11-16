@@ -220,7 +220,9 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             dep_name = dep.get("name")
             declarations = []
             for declaration in parent_pkg.get("dependencies", []):
-                if declaration.get("name") == dep_name or declaration.get("rename") == dep_name:
+                declared_names = {declaration.get("name"), declaration.get("rename")}
+                normalized_names = {value.replace("_", "-") for value in declared_names if value}
+                if dep_name in declared_names or dep_name.replace("_", "-") in normalized_names:
                     declarations.append({
                         field: declaration.get(field) for field in
                         ("name", "rename", "req", "kind", "optional", "uses_default_features",
@@ -632,7 +634,7 @@ def scan_build_scripts(workspace: Path, repository: str,
             raw_url = url_match.group(0).rstrip("),")
             url = raw_url
             for variable, value in version_values.items():
-                url = url.replace(" + variable + ", value)
+                url = url.replace("$" + "{" + variable + "}", value)
             release_match = re.search(
                 r"github\.com/([^/]+)/([^/]+)/releases/download/v([^/]+)/([^/?]+)", url)
             if not release_match:
