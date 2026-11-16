@@ -127,7 +127,10 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         elif category == "UNKNOWN":
             status = "UNKNOWN"
         elif decision:
-            status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
+            if category == "LGPL" and not decision.get("conditions_verified"):
+                status = "NEEDS_REVIEW"
+            else:
+                status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
         else:
             status = "NEEDS_REVIEW"
         node = nodes.get(pkg_id, {})
