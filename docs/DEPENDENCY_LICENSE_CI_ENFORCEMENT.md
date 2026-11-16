@@ -13,7 +13,7 @@
 ## Release gate semantics
 
 Strict mode blocks on:
-- GPL or AGPL dependencies (REJECTED).
+- GPL or AGPL dependencies where the prohibited license is required (REJECTED). A multi-license OR expression with a non-GPL/AGPL branch remains NEEDS_REVIEW until an authorized reviewer selects the exact alternative; an AND expression requiring GPL/AGPL remains REJECTED.
 - Unknown or missing license metadata (UNKNOWN).
 - Dependencies without scoped human approval (NEEDS_REVIEW).
 - LGPL without explicit approval and verified conditions.
