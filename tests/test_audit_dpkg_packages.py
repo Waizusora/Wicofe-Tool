@@ -61,5 +61,48 @@ class DpkgAuditTests(unittest.TestCase):
             self.assertEqual("UNKNOWN", item["status"])
 
 
+    def test_gpl_or_bsd_alternative_requires_human_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = {"name": "libdual", "version": "1.0", "old_version": "NEW",
+                       "architecture": None}
+            copyright = root / "usr/share/doc/libdual/copyright"
+            copyright.parent.mkdir(parents=True)
+            copyright.write_text(
+                "Source: https://example.invalid/libdual\\n"
+                "Files: *\\nLicense: GPL-2+ or BSD-2-clause\\n",
+                encoding="utf-8")
+            item = copyright_metadata(root, package)
+            self.assertEqual("NEEDS_REVIEW", item["status"])
+            self.assertEqual("GPL_OPTIONAL_ALTERNATIVE", item["license_category"])
+            self.assertEqual(["BSD-2-clause"], item["primary_license_alternatives"])
+            self.assertEqual(["BSD-2-clause"], item["primary_license_nonprohibited_alternatives"])
+
+    def test_gpl_or_lgpl_alternative_is_not_auto_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = {"name": "libdual", "version": "1.0", "old_version": "NEW",
+                       "architecture": None}
+            copyright = root / "usr/share/doc/libdual/copyright"
+            copyright.parent.mkdir(parents=True)
+            copyright.write_text(
+                "Files: *\\nLicense: GPL-2+ or LGPL-2.1+\\n",
+                encoding="utf-8")
+            item = copyright_metadata(root, package)
+            self.assertEqual("NEEDS_REVIEW", item["status"])
+            self.assertEqual(["LGPL-2.1+"], item["primary_license_nonprohibited_alternatives"])
+            self.assertEqual([], item["primary_license_alternatives"])
+
+    def test_gpl_and_mit_is_still_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = {"name": "librequired", "version": "1.0", "old_version": "NEW",
+                       "architecture": None}
+            copyright = root / "usr/share/doc/librequired/copyright"
+            copyright.parent.mkdir(parents=True)
+            copyright.write_text("Files: *\\nLicense: GPL-2+ and MIT\\n", encoding="utf-8")
+            item = copyright_metadata(root, package)
+            self.assertEqual("REJECTED", item["status"])
+
 if __name__ == "__main__":
     unittest.main()
