@@ -173,17 +173,20 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         evidence = []
         if license_expr:
             evidence.append({"kind": "cargo_metadata_license", "value": license_expr})
-        package_root = Path(pkg.get("manifest_path", "")).parent
-        license_candidates = [package_root / license_file] if license_file else [
+        manifest_path = pkg.get("manifest_path")
+        package_root = Path(manifest_path).parent if manifest_path else None
+        license_candidates = ([package_root / license_file] if license_file else [
             package_root / candidate for candidate in
             ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "COPYING.LESSER", "NOTICE")
-        ]
+        ]) if package_root else []
         for file_path in license_candidates:
             if file_path.is_file():
                 raw = file_path.read_bytes()
                 evidence.append({"kind": "license_file", "path": str(file_path),
                                  "sha256": hashlib.sha256(raw).hexdigest()})
-        if license_file and not any(item.get("kind") == "license_file" for item in evidence):
+        if license_file and not package_root:
+            evidence.append({"kind": "unresolved_license_file_path", "path": license_file})
+        elif license_file and not any(item.get("kind") == "license_file" for item in evidence):
             evidence.append({"kind": "missing_license_file", "path": str(package_root / license_file)})
         key = package_key(name, version)
         decision = decisions.get(key)
