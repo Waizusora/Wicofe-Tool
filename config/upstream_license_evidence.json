@@ -293,6 +293,39 @@
       ],
       "security_status": "NOT_ASSESSED",
       "maintenance_status": "NOT_ASSESSED"
+    },
+    "system-package:qemu-system-x86:1:10.2.1+ds-1ubuntu3.3": {
+      "name": "qemu-system-x86",
+      "source_revision": "QEMU v10.2.1",
+      "source_commit": "2d3df8abca265c9bcc9e438d691d561592060998",
+      "license": "GPL-2.0-or-later",
+      "upstream_url": "https://github.com/qemu/qemu",
+      "license_evidence": [
+        {
+          "url": "https://github.com/qemu/qemu/blob/2d3df8abca265c9bcc9e438d691d561592060998/COPYING",
+          "kind": "upstream-license"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
+    },
+    "system-package:xorriso:1:1.5.6-1.1ubuntu4": {
+      "name": "xorriso",
+      "source_revision": "libisoburn 1.5.6",
+      "license": "GPL-2.0-or-later",
+      "upstream_url": "https://www.gnu.org/software/xorriso/",
+      "license_evidence": [
+        {
+          "url": "https://github.com/Enzime/libisoburn/blob/master/COPYING",
+          "kind": "upstream-license"
+        },
+        {
+          "url": "https://www.gnu.org/software/xorriso/",
+          "kind": "upstream-license-summary"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
     }
   }
 }
