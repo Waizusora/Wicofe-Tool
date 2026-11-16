@@ -112,6 +112,27 @@ def classify_license(expression: str | None) -> str:
     return "OTHER_REVIEW"
 
 
+def load_decisions(path: Path | None) -> dict[str, dict[str, Any]]:
+    """Load explicit human decisions; evidence fields are mandatory."""
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("policy_version") != POLICY_VERSION:
+        raise ValueError(f"decision registry must declare policy_version {POLICY_VERSION}")
+    records = data.get("decisions", {})
+    if not isinstance(records, dict):
+        raise ValueError("decision registry decisions must be a JSON object")
+    required = ("status", "reviewer", "approved_by", "evidence", "scope", "conditions")
+    for key, decision in records.items():
+        if not isinstance(decision, dict):
+            raise ValueError(f"decision {key!r} must be a JSON object")
+        if any(not decision.get(field) for field in required):
+            raise ValueError(f"decision {key!r} lacks required human-review fields")
+        if decision.get("status") not in {"approved", "rejected"}:
+            raise ValueError(f"decision {key!r} status must be 'approved' or 'rejected'")
+    return records
+
+
 def load_upstream_evidence(path: Path | None) -> dict[str, dict[str, Any]]:
     """Load source/license evidence only; entries do not imply approval."""
     if path is None:
