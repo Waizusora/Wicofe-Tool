@@ -2,6 +2,9 @@
 
 This directory documents project-wide development, maintenance, validation, and release tooling.
 
+## Validation tools
+- [Repository documentation validator](REPOSITORY_DOCUMENTATION_VALIDATOR.md) — local Markdown link, anchor, workspace-safety and forbidden-term checks.
+
 ## Architecture
 - [Developer tooling architecture 0.1](DEVELOPER_TOOLING_ARCHITECTURE_0.1.md) — draft design for shared utilities, CLI conventions, safe execution, diagnostics and testing.
 
