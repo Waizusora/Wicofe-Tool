@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from audit_dependencies import (classify_license, cargo_records, load_decisions,
-                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence, scan_build_scripts)
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence, scan_build_scripts, scan_rust_toolchain)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -273,6 +273,36 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertTrue(item["checksum_verified_against_release_metadata"])
             self.assertIn("3RDPARTY.md", item["distribution"])
             self.assertEqual("NEEDS_REVIEW", item["status"])
+
+    def test_workflow_runner_and_apt_packages_are_inventoried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text(
+                "jobs:\n  build:\n    runs-on: ubuntu-26.04\n    steps:\n"
+                "      - run: |\n          sudo apt-get update\n"
+                "          sudo apt-get install --yes \\\n"
+                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\\n"
+                "            xorriso=1:1.5.6-1.1ubuntu4\n", encoding="utf-8")
+            scripts, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, {})
+            packages = [item for item in dependencies if item["ecosystem"] == "system-package"]
+            self.assertEqual({"qemu-system-x86", "xorriso"}, {item["name"] for item in packages})
+            self.assertTrue(any(item["ecosystem"] == "github-runner-image" for item in dependencies))
+
+    def test_rust_toolchain_manifest_records_exact_version_and_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "rust-toolchain.toml").write_text(
+                '[toolchain]\nchannel = "1.100.0"\ntargets = ["x86_64-unknown-none", "aarch64-unknown-none"]\n',
+                encoding="utf-8")
+            evidence = {"rust-toolchain:rustc:1.100.0": {
+                "source_commit": "c" * 40, "license": "MIT OR Apache-2.0",
+                "upstream_url": "https://github.com/rust-lang/rust",
+                "license_evidence": [{"url": "https://example.invalid/LICENSE-MIT"}]}}
+            rows = scan_rust_toolchain(root, "fixture", {}, evidence)
+            self.assertEqual("1.100.0", rows[0]["version"])
+            self.assertEqual(["x86_64-unknown-none", "aarch64-unknown-none"], rows[0]["targets"])
+            self.assertEqual("NEEDS_REVIEW", rows[0]["status"])
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
