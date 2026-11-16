@@ -28,7 +28,7 @@ Original Wicofe code targets MPL-2.0. Third-party dependencies retain their own 
 
 - [Project metadata checker](scripts/check_project_metadata.py) checks README.md and LICENSE presence.
 - [Documentation validator](scripts/validate_repository_docs.py) checks local Markdown links, heading fragments, workspace path escapes and configured forbidden terms.
-- [Repository inventory validator](scripts/validate_repository_inventory.py) compares local checkouts with the canonical 29-repository inventory in config/repository_inventory.txt.
+- [Repository inventory validator](scripts/validate_repository_inventory.py) compares local checkouts with the canonical 29-repository inventory in config/repository_inventory.txt.\n- [Dependency License Auditor](scripts/audit_dependencies.py) inventories resolved Cargo graphs and enforces human-reviewed decisions under Policy 0.2. Non-Cargo resolvers and final-image inventories remain pending.
 
 Run from a local checkout:
 
