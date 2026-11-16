@@ -357,6 +357,10 @@ def markdown_report(report: dict[str, Any]) -> str:
               "| Path | Category | SHA-256 | Status |", "|---|---|---|---|"]
     for item in report["assets"]:
         lines.append(f"| {item['path']} | {item['category']} | {item['sha256']} | {item['status']} |")
+    lines += ["", "### License and notice documents", "",
+              "| Path | Size (bytes) | SHA-256 |", "|---|---:|---|"]
+    for item in report["license_documents"]:
+        lines.append(f"| {item['path']} | {item['size_bytes']} | {item['sha256']} |")
     for item in report["submodules"]:
         if "url" in item:
             lines.append(f"| {item.get('path', 'submodule')} | git submodule: {item.get('url')} | source commit UNKNOWN | UNKNOWN |")
