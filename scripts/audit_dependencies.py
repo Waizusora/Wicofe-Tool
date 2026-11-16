@@ -93,6 +93,25 @@ def load_decisions(path: Path | None) -> dict[str, dict[str, Any]]:
     return decisions
 
 
+def load_coverage(path: Path | None) -> dict[str, dict[str, Any]]:
+    """Load human-reviewed evidence for repositories with no dependency manifests."""
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("policy_version") != POLICY_VERSION:
+        raise ValueError(f"coverage registry must declare policy_version {POLICY_VERSION}")
+    records = data.get("repositories", {})
+    if not isinstance(records, dict):
+        raise ValueError("coverage registry repositories must be a JSON object")
+    required = ("status", "reviewer", "approved_by", "evidence", "scope", "conditions")
+    for repository, record in records.items():
+        if not isinstance(record, dict) or record.get("status") != "reviewed_no_dependencies":
+            raise ValueError(f"coverage record {repository!r} must use status 'reviewed_no_dependencies'")
+        if any(not record.get(field) for field in required):
+            raise ValueError(f"coverage record {repository!r} lacks required human-review fields")
+    return records
+
+
 def package_key(name: str, version: str) -> str:
     return f"cargo:{name}:{version}"
 
@@ -377,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", default=None)
     parser.add_argument("--cargo-metadata", type=Path, action="append", default=[])
     parser.add_argument("--decisions", type=Path)
+    parser.add_argument("--coverage", type=Path, help="human-reviewed no-manifest coverage registry")
     parser.add_argument("--json", type=Path, default=Path("dependency-audit.json"))
     parser.add_argument("--markdown", type=Path, default=Path("DEPENDENCY_LICENSE_AUDIT.md"))
     parser.add_argument("--strict", action="store_true", help="fail for any non-PASS dependency or unresolved manifest")
@@ -387,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
     repository = args.repository or workspace.name
     try:
         decisions = load_decisions(args.decisions)
+        coverage_records = load_coverage(args.coverage)
+        coverage_decision = coverage_records.get(repository)
         manifests = scan_manifests(workspace, repository)
         assets, provenance = scan_assets(workspace, repository)
         license_documents = [item for item in provenance if "sha256" in item]
