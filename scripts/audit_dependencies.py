@@ -284,8 +284,9 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
 
 def scan_github_actions(workspace: Path, repository: str,
                        decisions: dict[str, dict[str, Any]],
-                       upstream_evidence: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                       upstream_evidence: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Inventory external actions as build-time dependencies; never auto-approve."""
+    upstream_evidence = upstream_evidence or {}
     records = []
     uses_pattern = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)")
     action_files = list(workspace.glob(".github/workflows/*.yml"))
