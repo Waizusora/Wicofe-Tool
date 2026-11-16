@@ -135,7 +135,8 @@ def package_key(name: str, version: str) -> str:
     return f"cargo:{name}:{version}"
 
 
-def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str, dict[str, Any]],
+                  resolution_context: str = "default") -> list[dict[str, Any]]:
     packages = {p["id"]: p for p in metadata.get("packages", [])}
     resolve = metadata.get("resolve") or {}
     nodes = {n["id"]: n for n in resolve.get("nodes", [])}
@@ -215,6 +216,7 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             "license_category": category, "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
             "enabled_features": enabled_features, "dependency_kinds": dependency_kinds,
+            "resolution_contexts": [resolution_context],
             "targets": [t.get("kind", []) for t in pkg.get("targets", [])],
             "status": status, "distribution": "not_established_by_metadata",
             "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
@@ -232,7 +234,7 @@ def merge_cargo_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             grouped[key] = record
             continue
         current = grouped[key]
-        for field in ("enabled_features", "dependency_kinds", "targets"):
+        for field in ("enabled_features", "dependency_kinds", "resolution_contexts", "targets"):
             current[field] = sorted({json.dumps(v, sort_keys=True) for v in current.get(field, [])}
                                     | {json.dumps(v, sort_keys=True) for v in record.get(field, [])})
             current[field] = [json.loads(v) for v in current[field]]
@@ -281,6 +283,81 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
                           "ecosystem": ecosystem, "status": "DISCOVERED",
                           "resolution": "requires ecosystem-specific resolver and license evidence"})
     return found
+
+
+def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Inventory scripts and surface external fetch/package-manager commands."""
+    scripts = []
+    dependencies = []
+    excluded = {".git", "target", "node_modules", ".venv", ".gradle"}
+    script_names = {"Makefile", "makefile", "GNUmakefile", "CMakeLists.txt", "meson.build",
+                    "build.rs", "Dockerfile", "Containerfile"}
+    script_extensions = {".sh", ".bash", ".ps1", ".bat", ".cmd", ".mk"}
+    external_patterns = [
+        ("curl", re.compile(r"\bcurl\b", re.IGNORECASE)),
+        ("wget", re.compile(r"\bwget\b", re.IGNORECASE)),
+        ("git-clone", re.compile(r"\bgit\s+clone\b", re.IGNORECASE)),
+        ("apt-install", re.compile(r"\bapt(?:-get)?\s+install\b", re.IGNORECASE)),
+        ("dnf-install", re.compile(r"\bdnf\s+install\b", re.IGNORECASE)),
+        ("yum-install", re.compile(r"\byum\s+install\b", re.IGNORECASE)),
+        ("pacman-install", re.compile(r"\bpacman\s+-S\b", re.IGNORECASE)),
+        ("brew-install", re.compile(r"\bbrew\s+install\b", re.IGNORECASE)),
+        ("cargo-install", re.compile(r"\bcargo\s+install\b", re.IGNORECASE)),
+        ("npm-install", re.compile(r"\bnpm\s+(?:install|i)\b", re.IGNORECASE)),
+        ("pnpm-install", re.compile(r"\bpnpm\s+(?:add|install)\b", re.IGNORECASE)),
+        ("pip-install", re.compile(r"\bpip(?:3)?\s+install\b", re.IGNORECASE)),
+        ("maven", re.compile(r"\bmvn\b", re.IGNORECASE)),
+        ("gradle", re.compile(r"\bgradle\b", re.IGNORECASE)),
+        ("cmake-fetch", re.compile(r"\b(?:FetchContent_Declare|ExternalProject_Add|file\s*\(\s*DOWNLOAD)\b", re.IGNORECASE)),
+    ]
+    for path in sorted(workspace.rglob("*")):
+        if not path.is_file() or any(part in excluded for part in path.parts):
+            continue
+        if path.name not in script_names and path.suffix.lower() not in script_extensions:
+            continue
+        try:
+            raw = path.read_bytes()
+            content = raw.decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        rel = str(path.relative_to(workspace))
+        matches = []
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            for label, pattern in external_patterns:
+                if pattern.search(line):
+                    matches.append({"command": label, "line": line_number, "text": line.strip()[:300]})
+        scripts.append({"repository": repository, "path": rel, "size_bytes": len(raw),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                        "external_command_matches": matches,
+                        "status": "NEEDS_REVIEW" if matches else "DISCOVERED"})
+        for match in matches:
+            dependencies.append({
+                "repository": repository, "ecosystem": "build-script-command",
+                "name": match["command"], "version": "UNPINNED",
+                "package_id": f"build-script:{rel}:{match['line']}:{match['command']}",
+                "license": None, "license_category": "UNKNOWN",
+                "license_evidence": [{"kind": "build_script_match", "path": rel,
+                                     "line": match["line"], "text": match["text"]}],
+                "dependency_type": "build-time", "enabled_features": [],
+                "status": "UNKNOWN", "distribution": "build-time command; payload not established",
+                "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+            })
+        if path.name in {"Dockerfile", "Containerfile"}:
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                match = re.match(r"^\s*FROM\s+(?:--platform=\S+\s+)?([^\s]+)", line, re.IGNORECASE)
+                if match and match.group(1).lower() != "scratch":
+                    image = match.group(1)
+                    dependencies.append({
+                        "repository": repository, "ecosystem": "container-image",
+                        "name": image, "version": "tag-or-digest-not-verified",
+                        "package_id": f"container-image:{image}",
+                        "license": None, "license_category": "UNKNOWN",
+                        "license_evidence": [{"kind": "docker_from", "path": rel, "line": line_number}],
+                        "dependency_type": "build-time", "enabled_features": [],
+                        "status": "UNKNOWN", "distribution": "container base image; final inclusion unknown",
+                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                    })
+    return scripts, dependencies
 
 
 def scan_github_actions(workspace: Path, repository: str,
@@ -469,7 +546,12 @@ def markdown_report(report: dict[str, Any]) -> str:
         else:
             for item in rows:
                 lines.append(f"- {item.get('name')} {item.get('version')} — {item.get('license') or 'UNKNOWN'} ({item.get('status')})")
+    lines += ["", "## Build scripts", "",
+              "| Path | External command matches | SHA-256 |", "|---|---|---|"]
+    for item in report["build_scripts"]:
+        lines.append(f"| {item['path']} | {len(item['external_command_matches'])} | {item['sha256']} |")
     lines += ["", "## Non-manifest assets and provenance", "",
+              f"- Build scripts inventoried: {len(report['build_scripts'])}",
               f"- Asset/vendor/generated-code records: {len(report['assets'])}",
               f"- License documents hashed: {len(report['license_documents'])}",
               f"- Submodule records: {len(report['submodules'])}", "",
@@ -519,7 +601,9 @@ def main(argv: list[str] | None = None) -> int:
         metadata_paths = {p.resolve() for p in args.cargo_metadata}
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
-            dependencies.extend(cargo_records(data, repository, decisions))
+            dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem))
+        build_scripts, build_dependencies = scan_build_scripts(workspace, repository)
+        dependencies.extend(build_dependencies)
         dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
         dependencies = merge_cargo_records(dependencies)
         # Without cargo metadata, preserve lockfile inventory but never infer licenses.
@@ -545,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
                   "repository_commit": git_revision(workspace),
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
-                  "manifests": manifests, "assets": assets,
+                  "manifests": manifests, "build_scripts": build_scripts, "assets": assets,
                   "license_documents": license_documents, "submodules": submodules,
                   "summary": statuses,
                   "limitations": ["non-Cargo ecosystems are discovery-only in this version",
@@ -560,15 +644,18 @@ def main(argv: list[str] | None = None) -> int:
     blocked = (coverage_status in {"UNKNOWN", "INCOMPLETE"}
                or bool(unresolved)
                or any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
+               or any(s["external_command_matches"] for s in build_scripts)
                or any(a["status"] != "PASS" for a in assets) or bool(submodules))
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
     if args.strict and (blocked or unresolved):
+        script_matches = sum(len(s["external_command_matches"]) for s in build_scripts)
         print(f"BLOCKED: coverage={coverage_status}; {len(dependencies)} dependency records; "
-              f"{len(unresolved)} unresolved manifest(s); {len(assets)} asset(s); {len(submodules)} submodule(s)")
+              f"{len(unresolved)} unresolved manifest(s); {script_matches} build-command match(es); "
+              f"{len(assets)} asset(s); {len(submodules)} submodule(s)")
         return 1
     print(f"Inventory written: {args.json} and {args.markdown}")
-    print(f"Coverage: {coverage_status}; dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; assets: {len(assets)}; submodules: {len(submodules)}")
+    print(f"Coverage: {coverage_status}; dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; build scripts: {len(build_scripts)}; assets: {len(assets)}; submodules: {len(submodules)}")
     return 0
 
 
