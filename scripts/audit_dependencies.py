@@ -145,8 +145,11 @@ def load_upstream_evidence(path: Path | None) -> dict[str, dict[str, Any]]:
     if not isinstance(records, dict):
         raise ValueError("upstream evidence dependencies must be a JSON object")
     for key, record in records.items():
-        if not record.get("license") or not re.fullmatch(r"[0-9a-fA-F]{40}", record.get("source_commit", "")):
-            raise ValueError(f"upstream evidence {key!r} lacks license or immutable source commit")
+        source_commit = record.get("source_commit")
+        if (not record.get("license")
+                or (source_commit and not re.fullmatch(r"[0-9a-fA-F]{40}", source_commit))
+                or (not source_commit and not record.get("source_revision"))):
+            raise ValueError(f"upstream evidence {key!r} lacks license or source revision/commit")
         if not record.get("upstream_url") or not record.get("license_evidence"):
             raise ValueError(f"upstream evidence {key!r} lacks upstream URL or license evidence")
     return records
@@ -546,14 +549,32 @@ def scan_build_scripts(workspace: Path, repository: str,
                     if not package:
                         continue
                     package_id = f"system-package:{package}:{version if separator else 'UNPINNED'}"
+                    evidence_record = upstream_evidence.get(package_id, {})
+                    decision = decisions.get(package_id)
+                    license_expr = evidence_record.get("license")
+                    category = classify_license(license_expr)
+                    if category.startswith("PROHIBITED"):
+                        status = "REJECTED"
+                    elif category == "UNKNOWN":
+                        status = "UNKNOWN"
+                    elif decision:
+                        status = "PASS"
+                    else:
+                        status = "NEEDS_REVIEW"
+                    license_evidence = [{"kind": "apt_install", "path": rel, "line": line_number}]
+                    license_evidence.extend(evidence_record.get("license_evidence", []))
                     dependencies.append({
                         "repository": repository, "ecosystem": "system-package",
                         "name": package, "version": version if separator else "UNPINNED",
-                        "package_id": package_id, "license": None, "license_category": "UNKNOWN",
-                        "license_evidence": [{"kind": "apt_install", "path": rel, "line": line_number}],
+                        "package_id": package_id, "source_commit": evidence_record.get("source_commit"),
+                        "source_revision": evidence_record.get("source_revision"),
+                        "upstream_url": evidence_record.get("upstream_url"),
+                        "license": license_expr, "license_category": category,
+                        "license_evidence": license_evidence,
                         "dependency_type": "build-time", "enabled_features": [],
-                        "status": "UNKNOWN", "distribution": "build environment package; not in final image",
+                        "status": status, "distribution": "build environment package; not in final image",
                         "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                        "decision": decision,
                     })
         scripts.append({"repository": repository, "path": rel, "size_bytes": len(raw),
                         "sha256": hashlib.sha256(raw).hexdigest(),
