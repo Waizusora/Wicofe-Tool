@@ -179,6 +179,23 @@ class LicenseAuditTests(unittest.TestCase):
                              {item["ecosystem"] for item in dependencies})
             self.assertTrue(all(item["status"] == "UNKNOWN" for item in dependencies))
 
+    def test_cargo_license_file_is_hashed_as_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Cargo.toml").write_text("[package]\nname='lib'\nversion='1.0.0'\n", encoding="utf-8")
+            (root / "LICENSE").write_text("MIT License fixture", encoding="utf-8")
+            metadata = {
+                "packages": [{"id": "lib 1.0.0 (registry)", "name": "lib", "version": "1.0.0",
+                              "license": "MIT", "license_file": "LICENSE",
+                              "manifest_path": str(root / "Cargo.toml")}],
+                "workspace_members": ["root"],
+                "resolve": {"nodes": [{"id": "root", "deps": [{"pkg": "lib 1.0.0 (registry)"}]},
+                                      {"id": "lib 1.0.0 (registry)", "deps": []}]}
+            }
+            rows = cargo_records(metadata, "fixture", {})
+            self.assertTrue(any(item["kind"] == "license_file" and item.get("sha256")
+                                for item in rows[0]["license_evidence"]))
+
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "Cargo.lock"
