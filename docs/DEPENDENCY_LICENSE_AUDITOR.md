@@ -23,7 +23,7 @@ Without Cargo metadata, Cargo.lock entries are still inventoried, but their lice
 
 ## Decision registry
 
-`config/dependency_license_decisions.example.json` is an empty template. Copy it to a controlled decision file and add a scoped human decision only after review. Each entry is keyed by `cargo:NAME:VERSION` and requires status, reviewer, approver, evidence, scope and conditions. The scanner validates the presence of these fields; it does not authenticate reviewers, interpret legal terms or grant approval.
+`config/dependency_license_decisions.example.json` is an empty template. Copy it to a controlled decision file and add a scoped human decision only after review. Each entry is keyed by `cargo:NAME:VERSION` and requires status, reviewer, approver, evidence, scope and conditions. LGPL entries additionally require `conditions_verified: true` after a human verifies the applicable source/relinking, notices, distribution and replacement obligations; an approval record without that field remains NEEDS_REVIEW. The scanner validates the presence of these fields; it does not authenticate reviewers, interpret legal terms or grant approval.
 
 GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes APPROVED_WITH_CONDITIONS only when a scoped decision exists. Other licenses require an explicit decision before PASS. Unknown or missing license metadata remains UNKNOWN.
 
