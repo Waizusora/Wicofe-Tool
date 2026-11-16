@@ -158,7 +158,7 @@ def license_decision_status(expression: str | None,
             return "NEEDS_REVIEW"
         branches = license_nonprohibited_alternatives(expression)
         normalized = {re.sub(r"\s+", " ", branch.strip()).upper() for branch in branches}
-        selected_key = re.sub(r"\\s+", " ", selected.strip()).upper()
+        selected_key = re.sub(r"\s+", " ", selected.strip()).upper()
         if selected_key not in normalized:
             return "NEEDS_REVIEW"
         if is_permissive_license_branch(selected):
