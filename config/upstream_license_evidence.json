@@ -1,0 +1,180 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "0.2.0",
+  "evidence_scope": "Upstream license and source metadata only; not a legal approval.",
+  "dependencies": {
+    "github-actions:Mattraks/delete-workflow-runs:v2": {
+      "name": "Mattraks/delete-workflow-runs",
+      "ref": "v2",
+      "source_commit": "0cf693bc9909e5e867ee8f27b813224ba862939c",
+      "license": "MIT",
+      "upstream_url": "https://github.com/Mattraks/delete-workflow-runs",
+      "license_evidence": [
+        {
+          "url": "https://github.com/Mattraks/delete-workflow-runs/blob/0cf693bc9909e5e867ee8f27b813224ba862939c/LICENSE",
+          "blob_sha": "aa685aa5315a01649584e23c95adcbfdbcf4875d"
+        }
+      ]
+    },
+    "github-actions:actions/cache:v4": {
+      "name": "actions/cache",
+      "ref": "v4",
+      "source_commit": "0057852bfaa89a56745cba8c7296529d2fc39830",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/cache",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/cache/blob/0057852bfaa89a56745cba8c7296529d2fc39830/LICENSE",
+          "blob_sha": "a426ef259d6c5d705e9c1405075c3b318093c65e"
+        }
+      ]
+    },
+    "github-actions:actions/checkout:v4": {
+      "name": "actions/checkout",
+      "ref": "v4",
+      "source_commit": "11d5960a326750d5838078e36cf38b85af677262",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/checkout",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/checkout/blob/11d5960a326750d5838078e36cf38b85af677262/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:actions/checkout:v6": {
+      "name": "actions/checkout",
+      "ref": "v6",
+      "source_commit": "d23441a48e516b6c34aea4fa41551a30e30af803",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/checkout",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/checkout/blob/d23441a48e516b6c34aea4fa41551a30e30af803/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:actions/upload-artifact:v4": {
+      "name": "actions/upload-artifact",
+      "ref": "v4",
+      "source_commit": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/upload-artifact",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/upload-artifact/blob/ea165f8d65b6e75b540449e92b4886f43607fa02/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:actions/upload-artifact:v6": {
+      "name": "actions/upload-artifact",
+      "ref": "v6",
+      "source_commit": "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/upload-artifact",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/upload-artifact/blob/b7c566a772e6b6bfb58ed0dc250532a479d7789f/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:android-actions/setup-android:v4": {
+      "name": "android-actions/setup-android",
+      "ref": "v4",
+      "source_commit": "be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd",
+      "license": "MIT",
+      "upstream_url": "https://github.com/android-actions/setup-android",
+      "license_evidence": [
+        {
+          "url": "https://github.com/android-actions/setup-android/blob/be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd/LICENSE",
+          "blob_sha": "ea12630e77accc61b11f15ad38b159b8cf7cfeb9"
+        }
+      ]
+    },
+    "github-actions:dtolnay/rust-toolchain:stable": {
+      "name": "dtolnay/rust-toolchain",
+      "ref": "stable",
+      "source_commit": "39008827e6b4319a349e9a42dfc90579dd25f1ca",
+      "license": "MIT",
+      "upstream_url": "https://github.com/dtolnay/rust-toolchain",
+      "license_evidence": [
+        {
+          "url": "https://github.com/dtolnay/rust-toolchain/blob/39008827e6b4319a349e9a42dfc90579dd25f1ca/LICENSE",
+          "blob_sha": "31aa79387f27e730e33d871925e152e35e428031"
+        }
+      ]
+    },
+    "github-actions:reactivecircus/android-emulator-runner:v2": {
+      "name": "reactivecircus/android-emulator-runner",
+      "ref": "v2",
+      "source_commit": "a421e43855164a8197daf9d8d40fe71c6996bb0d",
+      "license": "Apache-2.0",
+      "upstream_url": "https://github.com/ReactiveCircus/android-emulator-runner",
+      "license_evidence": [
+        {
+          "url": "https://github.com/ReactiveCircus/android-emulator-runner/blob/a421e43855164a8197daf9d8d40fe71c6996bb0d/LICENSE",
+          "blob_sha": "925b59625c0d4f8ed5ae95ab3f0fcbc55cce5ffd"
+        }
+      ]
+    },
+    "github-actions:taiki-e/install-action:cross": {
+      "name": "taiki-e/install-action",
+      "ref": "cross",
+      "source_commit": "af22fbf512bbc91a6a7869728037f907cc27e9d1",
+      "license": "MIT OR Apache-2.0",
+      "upstream_url": "https://github.com/taiki-e/install-action",
+      "license_evidence": [
+        {
+          "url": "https://github.com/taiki-e/install-action/blob/af22fbf512bbc91a6a7869728037f907cc27e9d1/LICENSE-MIT",
+          "blob_sha": "31aa79387f27e730e33d871925e152e35e428031"
+        },
+        {
+          "url": "https://github.com/taiki-e/install-action/blob/af22fbf512bbc91a6a7869728037f907cc27e9d1/LICENSE-APACHE",
+          "blob_sha": "f433b1a53f5b830a205fd2df78e2b34974656c7b"
+        }
+      ]
+    },
+    "github-actions:actions/setup-python:v5": {
+      "name": "actions/setup-python",
+      "ref": "v5",
+      "source_commit": "a26af69be951a213d495a4c3e4e4022e16d87065",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/setup-python",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/setup-python/blob/a26af69be951a213d495a4c3e4e4022e16d87065/LICENSE",
+          "blob_sha": "a426ef259d6c5d705e9c1405075c3b318093c65e"
+        }
+      ]
+    },
+    "github-actions:actions/setup-python:v6": {
+      "name": "actions/setup-python",
+      "ref": "v6",
+      "source_commit": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/setup-python",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/setup-python/blob/ece7cb06caefa5fff74198d8649806c4678c61a1/LICENSE",
+          "blob_sha": "a426ef259d6c5d705e9c1405075c3b318093c65e"
+        }
+      ]
+    },
+    "github-actions:Waizusora/Wicofe-Tools/.github/workflows/cross-repository-dependency-audit.yml:ca5e5747c7f92921c24f03a56d42a27a5f0c1c52": {
+      "name": "Waizusora/Wicofe-Tools/.github/workflows/cross-repository-dependency-audit.yml",
+      "ref": "ca5e5747c7f92921c24f03a56d42a27a5f0c1c52",
+      "source_commit": "ca5e5747c7f92921c24f03a56d42a27a5f0c1c52",
+      "license": "MPL-2.0",
+      "upstream_url": "https://github.com/Waizusora/Wicofe-Tools",
+      "license_evidence": [
+        {
+          "url": "https://github.com/Waizusora/Wicofe-Tools/blob/ca5e5747c7f92921c24f03a56d42a27a5f0c1c52/LICENSE",
+          "blob_sha": "ee6256cdb62a765749a71aae3abea32884301cd1"
+        }
+      ]
+    }
+  }
+}
