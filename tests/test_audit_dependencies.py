@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from audit_dependencies import (classify_license, cargo_records, load_decisions,
-                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage)
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -130,6 +130,18 @@ class LicenseAuditTests(unittest.TestCase):
                                      "repositories": {"Wicofe-Docs": record}}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_coverage(p)
+
+    def test_github_actions_are_build_time_dependencies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text(
+                "steps:\n  - uses: actions/checkout@v4\n  - uses: ./local-action\n"
+                "  - uses: docker://ghcr.io/example/tool:1\n", encoding="utf-8")
+            rows = scan_github_actions(Path(tmp), "fixture", {})
+            self.assertEqual(2, len(rows))
+            self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
+            self.assertTrue(all(row["dependency_type"] == "build-time" for row in rows))
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
