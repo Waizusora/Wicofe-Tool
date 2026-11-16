@@ -22,6 +22,7 @@ class DpkgAuditTests(unittest.TestCase):
             copyright.write_text(
                 "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"
                 "Source: https://example.invalid/libfoo\n"
+                "Files: *\n"
                 "License: BSD-3-clause\n", encoding="utf-8")
             item = copyright_metadata(root, packages[0])
             self.assertEqual("NEEDS_REVIEW", item["status"])
@@ -34,10 +35,24 @@ class DpkgAuditTests(unittest.TestCase):
                        "architecture": None}
             copyright = root / "usr/share/doc/qemu-test/copyright"
             copyright.parent.mkdir(parents=True)
-            copyright.write_text("Source: https://example.invalid/qemu\nLicense: GPL-2+\n",
+            copyright.write_text("Source: https://example.invalid/qemu\nFiles: *\nLicense: GPL-2+\n",
                                  encoding="utf-8")
             item = copyright_metadata(root, package)
             self.assertEqual("REJECTED", item["status"])
+
+    def test_secondary_gpl_notice_requires_review_not_automatic_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = {"name": "libmixed", "version": "1.0", "old_version": "NEW",
+                       "architecture": None}
+            copyright = root / "usr/share/doc/libmixed/copyright"
+            copyright.parent.mkdir(parents=True)
+            copyright.write_text(
+                "Files: *\nLicense: LGPL-2.1+\n\n"
+                "Files: tests/*\nLicense: GPL-2+\n", encoding="utf-8")
+            item = copyright_metadata(root, package)
+            self.assertEqual("NEEDS_REVIEW", item["status"])
+            self.assertEqual("LGPL", item["license_category"])
 
     def test_missing_copyright_is_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
