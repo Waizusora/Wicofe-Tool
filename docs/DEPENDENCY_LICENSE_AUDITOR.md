@@ -23,6 +23,8 @@ Without Cargo metadata, Cargo.lock entries are still inventoried, but their lice
 
 ## Decision and repository-coverage registries
 
+`config/upstream_license_evidence.json` records upstream license text references, immutable source commit snapshots and upstream URLs. It is evidence input only and never constitutes approval. Mutable consumer refs remain NEEDS_REVIEW even when the tag/branch was resolved to a commit.
+
 `config/dependency_license_decisions.example.json` is an empty template. Copy it to a controlled decision file and add a scoped human decision only after review.
 
 `config/repository_dependency_coverage.example.json` records human-reviewed repositories where no dependency manifests are present. An empty repository is UNKNOWN by default; it is not silently treated as dependency-free. A coverage entry must state `reviewed_no_dependencies`, reviewer, approver, evidence, scope and conditions. This is a coverage attestation, not a license approval. Cargo entries are keyed by `cargo:NAME:VERSION`; GitHub Actions entries use `github-actions:OWNER/REPO:REF`. Each entry requires status, reviewer, approver, evidence, scope and conditions. LGPL entries additionally require `conditions_verified: true` after a human verifies the applicable source/relinking, notices, distribution and replacement obligations; an approval record without that field remains NEEDS_REVIEW. The scanner validates the presence of these fields; it does not authenticate reviewers, interpret legal terms or grant approval.
