@@ -26,7 +26,7 @@ The scanner never creates legal approval. Decision records and no-manifest cover
 
 ## Current integration boundary
 
-The cross-repository audit workflow is an independent enforcement job. It is not yet called by the Wicofe-Build release pipeline or final-image publication workflow. Therefore, a successful run of an individual repository's informational workflow must not be treated as release authorization.
+Wicofe-Build now provides `.github/workflows/release-dependency-license-gate.yml`, a reusable/tag-triggered gate pinned to an immutable Wicofe-Tools commit. It calls the strict cross-repository workflow. However, Wicofe-Build still has no complete end-to-end build/release pipeline, and final-image publication is not yet wired to this gate. A successful individual repository informational workflow must not be treated as release authorization.
 
 Before release integration, Wicofe-Build must consume the strict cross-repository audit result and fail if it is unsuccessful. Wicofe-Image must also provide a final image/SBOM inventory that is reconciled against the audited dependency and asset set.
 
