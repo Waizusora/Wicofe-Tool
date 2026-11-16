@@ -69,8 +69,8 @@ class DpkgAuditTests(unittest.TestCase):
             copyright = root / "usr/share/doc/libdual/copyright"
             copyright.parent.mkdir(parents=True)
             copyright.write_text(
-                "Source: https://example.invalid/libdual\\n"
-                "Files: *\\nLicense: GPL-2+ or BSD-2-clause\\n",
+                "Source: https://example.invalid/libdual\n"
+                "Files: *\nLicense: GPL-2+ or BSD-2-clause\n",
                 encoding="utf-8")
             item = copyright_metadata(root, package)
             self.assertEqual("NEEDS_REVIEW", item["status"])
@@ -86,7 +86,7 @@ class DpkgAuditTests(unittest.TestCase):
             copyright = root / "usr/share/doc/libdual/copyright"
             copyright.parent.mkdir(parents=True)
             copyright.write_text(
-                "Files: *\\nLicense: GPL-2+ or LGPL-2.1+\\n",
+                "Files: *\nLicense: GPL-2+ or LGPL-2.1+\n",
                 encoding="utf-8")
             item = copyright_metadata(root, package)
             self.assertEqual("NEEDS_REVIEW", item["status"])
@@ -100,7 +100,7 @@ class DpkgAuditTests(unittest.TestCase):
                        "architecture": None}
             copyright = root / "usr/share/doc/librequired/copyright"
             copyright.parent.mkdir(parents=True)
-            copyright.write_text("Files: *\\nLicense: GPL-2+ and MIT\\n", encoding="utf-8")
+            copyright.write_text("Files: *\nLicense: GPL-2+ and MIT\n", encoding="utf-8")
             item = copyright_metadata(root, package)
             self.assertEqual("REJECTED", item["status"])
 
