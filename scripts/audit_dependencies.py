@@ -68,6 +68,8 @@ def classify_license(expression: str | None) -> str:
     if re.search(r"\bGPL(?:-|\s)", value) or re.search(r"\bGPL\b", value):
         return "PROHIBITED_GPL"
     if "LGPL" in value:
+        if re.search(r"\bOR\b", value) and re.search(r"\b(?:MIT|Apache-2\.0|BSD-[0-9]-Clause|ISC|Zlib)\b", value):
+            return "LGPL_OPTIONAL_ALTERNATIVE"
         return "LGPL"
     if any(token in value for token in ("MPL", "EPL", "CDDL", "OSL", "EUPL", "SSPL")):
         return "COPYLEFT_REVIEW"
@@ -135,24 +137,61 @@ def package_key(name: str, version: str) -> str:
     return f"cargo:{name}:{version}"
 
 
+def cargo_lock_checksums(workspace: Path) -> dict[tuple[str, str, str | None], str]:
+    """Read Cargo.lock SHA-256 checksums for registry packages."""
+    checksums: dict[tuple[str, str, str | None], str] = {}
+    for lockfile in workspace.rglob("Cargo.lock"):
+        if any(part in {".git", "target", "node_modules", ".venv"} for part in lockfile.parts):
+            continue
+        try:
+            data = tomllib.loads(lockfile.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+            raise ValueError(f"cannot parse {lockfile}: {exc}") from exc
+        for package in data.get("package", []):
+            checksum = package.get("checksum")
+            if checksum:
+                key = (package.get("name", ""), package.get("version", ""), package.get("source"))
+                checksums[key] = checksum
+    return checksums
+
+
 def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str, dict[str, Any]],
-                  resolution_context: str = "default") -> list[dict[str, Any]]:
+                  resolution_context: str = "default",
+                  lock_checksums: dict[tuple[str, str, str | None], str] | None = None) -> list[dict[str, Any]]:
     packages = {p["id"]: p for p in metadata.get("packages", [])}
     resolve = metadata.get("resolve") or {}
     nodes = {n["id"]: n for n in resolve.get("nodes", [])}
     members = set(metadata.get("workspace_members", []))
     direct_ids: set[str] = set()
     reachable: set[str] = set()
+    incoming: dict[str, list[dict[str, Any]]] = {}
     stack: list[str] = []
-    for member in members:
-        node = nodes.get(member)
-        if not node:
-            continue
+    for parent_id, node in nodes.items():
+        parent_pkg = packages.get(parent_id, {})
         for dep in node.get("deps", []):
-            pkg_id = dep.get("pkg")
-            if pkg_id in packages:
-                direct_ids.add(pkg_id)
-                stack.append(pkg_id)
+            child_id = dep.get("pkg")
+            if child_id not in packages:
+                continue
+            if parent_id in members:
+                direct_ids.add(child_id)
+            stack.append(child_id)
+            child_pkg = packages[child_id]
+            dep_name = dep.get("name")
+            declarations = []
+            for declaration in parent_pkg.get("dependencies", []):
+                if declaration.get("name") == dep_name or declaration.get("rename") == dep_name:
+                    declarations.append({
+                        field: declaration.get(field) for field in
+                        ("name", "rename", "req", "kind", "optional", "uses_default_features",
+                         "features", "target", "registry")
+                    })
+            incoming.setdefault(child_id, []).append({
+                "parent_name": parent_pkg.get("name", parent_id),
+                "parent_version": parent_pkg.get("version"),
+                "dependency_name": dep_name,
+                "dependency_kinds": dep.get("dep_kinds", []),
+                "declarations": declarations,
+            })
     while stack:
         current = stack.pop()
         if current in reachable:
@@ -165,9 +204,11 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
                 stack.append(child)
 
     records = []
+    lock_checksums = lock_checksums or {}
     for pkg_id in sorted(reachable):
         pkg = packages[pkg_id]
         name, version = pkg.get("name", "unknown"), pkg.get("version", "unknown")
+        source = pkg.get("source")
         license_expr = pkg.get("license")
         license_file = pkg.get("license_file")
         evidence = []
@@ -175,11 +216,19 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             evidence.append({"kind": "cargo_metadata_license", "value": license_expr})
         manifest_path = pkg.get("manifest_path")
         package_root = Path(manifest_path).parent if manifest_path else None
-        license_candidates = ([package_root / license_file] if license_file else [
-            package_root / candidate for candidate in
-            ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "COPYING.LESSER", "NOTICE")
-        ]) if package_root else []
-        for file_path in license_candidates:
+        if package_root:
+            if license_file:
+                license_candidates = [package_root / license_file]
+            else:
+                try:
+                    license_candidates = [item for item in package_root.iterdir()
+                                          if item.is_file() and item.name.upper().startswith(
+                                              ("LICENSE", "COPYING", "NOTICE"))]
+                except OSError:
+                    license_candidates = []
+        else:
+            license_candidates = []
+        for file_path in sorted(set(license_candidates)):
             if file_path.is_file():
                 raw = file_path.read_bytes()
                 evidence.append({"kind": "license_file", "path": str(file_path),
@@ -195,30 +244,40 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             status = "REJECTED"
         elif category == "UNKNOWN":
             status = "UNKNOWN"
-        elif decision:
-            if category == "LGPL" and not decision.get("conditions_verified"):
-                status = "NEEDS_REVIEW"
+        elif category == "LGPL":
+            status = "APPROVED_WITH_CONDITIONS" if decision and decision.get("conditions_verified") else "NEEDS_REVIEW"
+        elif category == "LGPL_OPTIONAL_ALTERNATIVE":
+            selected = decision.get("selected_license") if decision else None
+            if decision and selected and selected.upper() in license_expr.upper():
+                status = "PASS"
             else:
-                status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
+                status = "NEEDS_REVIEW"
+        elif decision:
+            status = "PASS"
         else:
             status = "NEEDS_REVIEW"
         node = nodes.get(pkg_id, {})
         enabled_features = sorted(node.get("features", []))
+        incoming_edges = incoming.get(pkg_id, [])
         dependency_kinds = sorted({
             kind.get("kind") or "normal"
-            for dep in node.get("deps", [])
-            for kind in dep.get("dep_kinds", [])
+            for edge in incoming_edges
+            for kind in edge.get("dependency_kinds", [])
         })
-        source = pkg.get("source")
         source_commit = source.rsplit("#", 1)[-1] if source and source.startswith("git+") and "#" in source else None
+        checksum = pkg.get("checksum") or lock_checksums.get((name, version, source))
         records.append({
             "repository": repository, "ecosystem": "cargo", "name": name, "version": version,
             "package_id": pkg_id, "source": source, "source_commit": source_commit,
-            "checksum": pkg.get("checksum"),
-            "upstream_url": pkg.get("repository"), "license": license_expr,
+            "checksum": checksum, "upstream_url": pkg.get("repository"), "license": license_expr,
             "license_category": category, "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
-            "enabled_features": enabled_features, "dependency_kinds": dependency_kinds,
+            "required_by": incoming_edges, "enabled_features": enabled_features,
+            "dependency_kinds": dependency_kinds,
+            "outgoing_dependency_kinds": sorted({
+                kind.get("kind") or "normal"
+                for dep in node.get("deps", []) for kind in dep.get("dep_kinds", [])
+            }),
             "resolution_contexts": [resolution_context],
             "targets": [t.get("kind", []) for t in pkg.get("targets", [])],
             "status": status, "distribution": "not_established_by_metadata",
@@ -638,9 +697,10 @@ def main(argv: list[str] | None = None) -> int:
         submodules = [item for item in provenance if "url" in item]
         dependencies = []
         metadata_paths = {p.resolve() for p in args.cargo_metadata}
+        lock_checksums = cargo_lock_checksums(workspace)
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
-            dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem))
+            dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository)
         dependencies.extend(build_dependencies)
         dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
