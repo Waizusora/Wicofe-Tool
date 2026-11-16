@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "owner": "Waizusora",
+  "policy": "README.md is required in every listed repository. Missing LICENSE is reported as a warning until the repository's licensing status is resolved; this check does not determine license compatibility.",
+  "repositories": [
+    "Wicofe",
+    "Wicofe-Kernel",
+    "Wicofe-ABI",
+    "Wicofe-Libc",
+    "Wicofe-Drivers",
+    "Wicofe-Services",
+    "Wicofe-Lib",
+    "Wicofe-Storage",
+    "Wicofe-Tools",
+    "Wicofe-Docs",
+    "Wicofe-Specs",
+    "Wicofe-Tests",
+    "Wicofe-ThirdParty",
+    "Wicofe-Update",
+    "Wicofe-Build",
+    "Wicofe-Image",
+    "Wicofe-Installer",
+    "Wicofe-Graphics",
+    "Wicofe-Audio",
+    "Wicofe-SDK",
+    "Wicofe-Network",
+    "Wicofe-Input",
+    "Wicofe-Ports",
+    "Wicofe-Recovery"
+  ]
+}
