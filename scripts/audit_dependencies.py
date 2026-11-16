@@ -154,6 +154,34 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
     return records
 
 
+def merge_cargo_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge repeated metadata captures while preserving conflicting license evidence."""
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        key = record.get("package_id") or f"{record.get('name')}@{record.get('version')}"
+        if key not in grouped:
+            grouped[key] = record
+            continue
+        current = grouped[key]
+        for field in ("enabled_features", "dependency_kinds", "targets"):
+            current[field] = sorted({json.dumps(v, sort_keys=True) for v in current.get(field, [])}
+                                    | {json.dumps(v, sort_keys=True) for v in record.get(field, [])})
+            current[field] = [json.loads(v) for v in current[field]]
+        if record.get("dependency_type") == "direct":
+            current["dependency_type"] = "direct"
+        evidence = current.setdefault("license_evidence", [])
+        for item in record.get("license_evidence", []):
+            if item not in evidence:
+                evidence.append(item)
+        if current.get("license") != record.get("license"):
+            current["status"] = "UNKNOWN"
+            current["license_category"] = "UNKNOWN"
+            current["license"] = None
+            evidence.append({"kind": "conflicting_license_metadata", "values": sorted({
+                str(current.get("license")), str(record.get("license"))})})
+    return [grouped[key] for key in sorted(grouped)]
+
+
 def lockfile_records(path: Path, repository: str) -> list[dict[str, Any]]:
     """Cargo.lock contains versions/checksums, not authoritative license metadata."""
     try:
@@ -246,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions))
+        dependencies = merge_cargo_records(dependencies)
         # Without cargo metadata, preserve lockfile inventory but never infer licenses.
         if not metadata_paths:
             for lock in workspace.rglob("Cargo.lock"):
@@ -267,9 +296,11 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
     unresolved = [m for m in manifests
-                  if m["ecosystem"] != "cargo-lock"
-                  and (m["ecosystem"] != "cargo" or not metadata_paths)]
+                  if m["ecosystem"] not in {"cargo", "cargo-lock"}]
+    if cargo_manifest_count != len(metadata_paths):
+        unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
     blocked = any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
