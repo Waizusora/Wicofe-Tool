@@ -665,6 +665,7 @@ def scan_build_scripts(workspace: Path, repository: str,
             license_evidence.extend(evidence_record.get("license_evidence", []))
             notices_in_iso = ("NOTICE_DEST" in content and "3RDPARTY.md" in content
                               and "COPYING" in content)
+            archive_license_in_iso = '"$LIMINE_DIR/LICENSE"' in content
             dependencies.append({
                 "repository": repository, "ecosystem": "downloaded-artifact",
                 "name": component_name, "version": version,
@@ -679,8 +680,10 @@ def scan_build_scripts(workspace: Path, repository: str,
                 "tag_signature_verified": evidence_record.get("tag_signature_verified", False),
                 "dependency_type": "build-time", "enabled_features": [],
                 "status": status,
-                "distribution": ("/boot/limine/licenses/limine-12.9.6/ (COPYING and 3RDPARTY.md staged by build script)"
-                                if notices_in_iso else "final distribution path not established"),
+                "distribution": ("/boot/limine/licenses/limine-12.9.6/ (COPYING, 3RDPARTY.md"
+                                + (", archive LICENSE" if archive_license_in_iso else "")
+                                + " staged by build script)" if notices_in_iso
+                                else "final distribution path not established"),
                 "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
                 "decision": decision,
             })
