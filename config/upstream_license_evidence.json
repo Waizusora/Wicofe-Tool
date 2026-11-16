@@ -240,6 +240,36 @@
           "blob_sha": "ee6256cdb62a765749a71aae3abea32884301cd1"
         }
       ]
+    },
+    "downloaded-artifact:Limine:12.9.6": {
+      "name": "Limine Bootloader binary distribution",
+      "ref": "v12.9.6",
+      "source_commit": "89a9512c623a4779cc73e3869383876d54264b28",
+      "license": "BSD-2-Clause",
+      "upstream_url": "https://github.com/Limine-Bootloader/Limine",
+      "release_asset_url": "https://github.com/Limine-Bootloader/Limine/releases/download/v12.9.6/limine-binary.tar.xz",
+      "release_asset_sha256": "939f670e75e75afdc20536c73f7e7cdbd379cab67a17c17e0bb0ed92a8ccf78c",
+      "tag_signature_verified": true,
+      "bundled_component_licenses": [
+        "0BSD",
+        "BSD-2-Clause",
+        "MIT",
+        "Apache-2.0",
+        "CC0-1.0",
+        "CC-BY-3.0-derived"
+      ],
+      "license_evidence": [
+        {
+          "url": "https://github.com/Limine-Bootloader/Limine/blob/89a9512c623a4779cc73e3869383876d54264b28/COPYING",
+          "kind": "upstream-license"
+        },
+        {
+          "url": "https://github.com/Limine-Bootloader/Limine/blob/89a9512c623a4779cc73e3869383876d54264b28/3RDPARTY.md",
+          "kind": "third-party-notices"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
     }
   }
 }
