@@ -1,15 +1,17 @@
-name: Repository documentation validator tests
+name: Repository validation tool tests
 
 on:
   push:
     paths:
-      - "scripts/validate_repository_docs.py"
+      - "scripts/**"
       - "tests/**"
+      - "config/**"
       - ".github/workflows/repository-docs-validator.yml"
   pull_request:
     paths:
-      - "scripts/validate_repository_docs.py"
+      - "scripts/**"
       - "tests/**"
+      - "config/**"
       - ".github/workflows/repository-docs-validator.yml"
   workflow_dispatch:
 
