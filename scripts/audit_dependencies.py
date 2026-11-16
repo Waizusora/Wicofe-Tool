@@ -368,8 +368,10 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     return found
 
 
-def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Inventory scripts and surface external fetch/package-manager commands."""
+def scan_build_scripts(workspace: Path, repository: str,
+                       decisions: dict[str, dict[str, Any]],
+                       upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Inventory build scripts, host tools, container images and pinned downloads."""
     scripts = []
     dependencies = []
     excluded = {".git", "target", "node_modules", ".venv", ".gradle"}
@@ -399,6 +401,20 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
         ("apk-install", re.compile(r"\bapk\s+add\b", re.IGNORECASE)),
         ("zypper-install", re.compile(r"\bzypper\s+install\b", re.IGNORECASE)),
     ]
+    tool_patterns = [
+        ("make", re.compile(r"\bmake\b", re.IGNORECASE)),
+        ("tar", re.compile(r"\btar\b", re.IGNORECASE)),
+        ("sha256sum", re.compile(r"\bsha256sum\b", re.IGNORECASE)),
+        ("xorriso", re.compile(r"\bxorriso\b", re.IGNORECASE)),
+        ("nasm", re.compile(r"\bnasm\b", re.IGNORECASE)),
+        ("qemu-img", re.compile(r"\bqemu-img\b", re.IGNORECASE)),
+        ("mtools", re.compile(r"\b(?:mformat|mcopy|mmd)\b", re.IGNORECASE)),
+        ("grub-mkrescue", re.compile(r"\bgrub-mkrescue\b", re.IGNORECASE)),
+        ("objcopy", re.compile(r"\bobjcopy\b", re.IGNORECASE)),
+        ("linker", re.compile(r"\b(?:ld|lld)\b", re.IGNORECASE)),
+        ("compiler", re.compile(r"\b(?:gcc|clang)\b", re.IGNORECASE)),
+        ("rust-toolchain", re.compile(r"\b(?:rustc|cargo)\b", re.IGNORECASE)),
+    ]
     for path in sorted(workspace.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
             continue
@@ -415,7 +431,7 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
         for line_number, line in enumerate(content.splitlines(), start=1):
             if line.lstrip().startswith("#"):
                 continue
-            for label, pattern in external_patterns:
+            for label, pattern in external_patterns + tool_patterns:
                 if pattern.search(line):
                     matches.append({"command": label, "line": line_number, "text": line.strip()[:300]})
         scripts.append({"repository": repository, "path": rel, "size_bytes": len(raw),
@@ -423,15 +439,16 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
                         "external_command_matches": matches,
                         "status": "NEEDS_REVIEW" if matches or path.name == "build.rs" else "DISCOVERED"})
         for match in matches:
+            ecosystem = "build-script-command" if match["command"] in {p[0] for p in external_patterns} else "build-tool-command"
             dependencies.append({
-                "repository": repository, "ecosystem": "build-script-command",
+                "repository": repository, "ecosystem": ecosystem,
                 "name": match["command"], "version": "UNPINNED",
                 "package_id": f"build-script:{rel}:{match['line']}:{match['command']}",
                 "license": None, "license_category": "UNKNOWN",
                 "license_evidence": [{"kind": "build_script_match", "path": rel,
                                      "line": match["line"], "text": match["text"]}],
                 "dependency_type": "build-time", "enabled_features": [],
-                "status": "UNKNOWN", "distribution": "build-time command; payload not established",
+                "status": "UNKNOWN", "distribution": "build-time tool/command; payload not established",
                 "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
             })
         if path.name in {"Dockerfile", "Containerfile"} or path.name.startswith("Dockerfile."):
@@ -439,6 +456,16 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
                 match = re.match(r"^\s*FROM\s+(?:--platform=\S+\s+)?([^\s]+)", line, re.IGNORECASE)
                 if match and match.group(1).lower() != "scratch":
                     image = match.group(1)
+                    dependencies.append({
+                        "repository": repository, "ecosystem": "container-image",
+                        "name": image, "version": "tag-or-digest-not-verified",
+                        "package_id": f"container-image:{image}",
+                        "license": None, "license_category": "UNKNOWN",
+                        "license_evidence": [{"kind": "docker_from", "path": rel, "line": line_number}],
+                        "dependency_type": "build-time", "enabled_features": [],
+                        "status": "UNKNOWN", "distribution": "container base image; final inclusion unknown",
+                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                    })
         if path.name in {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}:
             for line_number, line in enumerate(content.splitlines(), start=1):
                 match = re.match(r"^\s*image:\s*([^\s#]+)", line, re.IGNORECASE)
@@ -454,16 +481,65 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
                         "status": "UNKNOWN", "distribution": "container image; final inclusion unknown",
                         "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
                     })
-                    dependencies.append({
-                        "repository": repository, "ecosystem": "container-image",
-                        "name": image, "version": "tag-or-digest-not-verified",
-                        "package_id": f"container-image:{image}",
-                        "license": None, "license_category": "UNKNOWN",
-                        "license_evidence": [{"kind": "docker_from", "path": rel, "line": line_number}],
-                        "dependency_type": "build-time", "enabled_features": [],
-                        "status": "UNKNOWN", "distribution": "container base image; final inclusion unknown",
-                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
-                    })
+
+        version_values = {m.group(1): m.group(2) for m in re.finditer(
+            r"^\s*([A-Z0-9_]*VERSION)\s*=\s*['\"]([^'\"]+)['\"]", content, re.MULTILINE)}
+        checksum_values = {m.group(1): m.group(2).lower() for m in re.finditer(
+            r"^\s*([A-Z0-9_]*SHA256)\s*=\s*['\"]([0-9a-fA-F]{64})['\"]", content, re.MULTILINE)}
+        for url_match in re.finditer(r"https?://[^'\"\s]+", content):
+            raw_url = url_match.group(0).rstrip("),")
+            url = raw_url
+            for variable, value in version_values.items():
+                url = url.replace(" + variable + ", value)
+            release_match = re.search(
+                r"github\.com/([^/]+)/([^/]+)/releases/download/v([^/]+)/([^/?]+)", url)
+            if not release_match:
+                continue
+            owner, repo_name, version, filename = release_match.groups()
+            component_name = "Limine" if repo_name.lower() == "limine" else repo_name
+            key = f"downloaded-artifact:{component_name}:{version}"
+            evidence_record = upstream_evidence.get(key, {})
+            decision = decisions.get(key)
+            checksum = next(iter(checksum_values.values()), None)
+            published_checksum = evidence_record.get("release_asset_sha256")
+            checksum_matches = bool(checksum and published_checksum and checksum == published_checksum.lower())
+            license_expr = evidence_record.get("license")
+            category = classify_license(license_expr)
+            if checksum and published_checksum and not checksum_matches:
+                status = "BLOCKED"
+            elif category.startswith("PROHIBITED"):
+                status = "REJECTED"
+            elif category == "UNKNOWN":
+                status = "UNKNOWN"
+            elif decision:
+                status = "PASS"
+            else:
+                status = "NEEDS_REVIEW"
+            line_number = content[:url_match.start()].count("\n") + 1
+            license_evidence = [{"kind": "build_script_download", "path": rel,
+                                 "line": line_number, "url": url}]
+            license_evidence.extend(evidence_record.get("license_evidence", []))
+            notices_in_iso = ("NOTICE_DEST" in content and "3RDPARTY.md" in content
+                              and "COPYING" in content)
+            dependencies.append({
+                "repository": repository, "ecosystem": "downloaded-artifact",
+                "name": component_name, "version": version,
+                "package_id": key, "source": evidence_record.get("upstream_url"),
+                "source_commit": evidence_record.get("source_commit"),
+                "upstream_url": evidence_record.get("upstream_url"),
+                "download_url": url, "filename": filename,
+                "checksum": checksum, "checksum_verified_against_release_metadata": checksum_matches,
+                "license": license_expr, "license_category": category,
+                "license_evidence": license_evidence,
+                "bundled_component_licenses": evidence_record.get("bundled_component_licenses", []),
+                "tag_signature_verified": evidence_record.get("tag_signature_verified", False),
+                "dependency_type": "build-time", "enabled_features": [],
+                "status": status,
+                "distribution": ("/boot/limine/licenses/limine-12.9.6/ (notices staged by build script)"
+                                if notices_in_iso else "final distribution path not established"),
+                "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                "decision": decision,
+            })
     return scripts, dependencies
 
 
@@ -722,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
-        build_scripts, build_dependencies = scan_build_scripts(workspace, repository)
+        build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
         dependencies.extend(build_dependencies)
         dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
         dependencies = merge_cargo_records(dependencies)
