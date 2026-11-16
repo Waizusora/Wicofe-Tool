@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from audit_dependencies import (classify_license, cargo_records, load_decisions,
-                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions)
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -142,6 +142,25 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual(2, len(rows))
             self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
             self.assertTrue(all(row["dependency_type"] == "build-time" for row in rows))
+
+    def test_upstream_action_license_evidence_does_not_auto_approve(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text("steps:\n  - uses: actions/checkout@v4\n", encoding="utf-8")
+            catalog_path = Path(tmp) / "evidence.json"
+            commit = "a" * 40
+            entry = {"license": "MIT", "source_commit": commit,
+                     "upstream_url": "https://github.com/actions/checkout",
+                     "license_evidence": [{"url": "https://example.invalid/LICENSE"}]}
+            catalog_path.write_text(json.dumps({"policy_version": "0.2.0",
+                "dependencies": {"github-actions:actions/checkout:v4": entry}}), encoding="utf-8")
+            evidence = load_upstream_evidence(catalog_path)
+            row = scan_github_actions(Path(tmp), "fixture", {}, evidence)[0]
+            self.assertEqual("MIT", row["license"])
+            self.assertEqual(commit, row["source_commit"])
+            self.assertFalse(row["ref_is_immutable"])
+            self.assertEqual("NEEDS_REVIEW", row["status"])
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
