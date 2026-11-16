@@ -71,14 +71,20 @@ jobs:
             index=0
             for manifest in "${manifests[@]}"; do
               index=$((index + 1))
-              metadata="reports/cargo-metadata/$repo-$index.json"
-              # If no committed lockfile exists, Cargo resolves a transient lockfile in this CI checkout.
-              if cargo metadata --format-version 1 --manifest-path "$manifest" > "$metadata"; then
-                args+=(--cargo-metadata "$metadata")
-              else
-                echo "BLOCKED: Cargo metadata resolution failed: $repo / $manifest"
-                failed=1
-              fi
+              for feature_mode in default all-features; do
+                metadata="reports/cargo-metadata/$repo-$index-$feature_mode.json"
+                cargo_args=(metadata --format-version 1 --manifest-path "$manifest")
+                if [ "$feature_mode" = "all-features" ]; then
+                  cargo_args+=(--all-features)
+                fi
+                # Without a committed lockfile Cargo creates a transient audit-only lockfile.
+                if cargo "${cargo_args[@]}" > "$metadata"; then
+                  args+=(--cargo-metadata "$metadata")
+                else
+                  echo "BLOCKED: Cargo metadata resolution failed: $repo / $manifest / $feature_mode"
+                  failed=1
+                fi
+              done
             done
             python Wicofe-Tools/scripts/audit_dependencies.py "${args[@]}" || failed=1
             if [ -d "$root" ]; then
