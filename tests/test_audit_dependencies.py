@@ -384,5 +384,9 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("PROHIBITED_GPL", classify_license("GPL-2+"))
         self.assertEqual("AGPL_OPTIONAL_ALTERNATIVE", classify_license("AGPL-3.0-only OR MIT"))
 
+    def test_or_later_is_part_of_license_identifier_not_an_alternative(self):
+        self.assertEqual("PROHIBITED_GPL", classify_license("GPL-2.0-or-later"))
+        self.assertEqual("PROHIBITED_AGPL", classify_license("AGPL-3.0-or-later"))
+
 if __name__ == "__main__":
     unittest.main()
