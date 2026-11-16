@@ -428,8 +428,19 @@ def main(argv: list[str] | None = None) -> int:
         statuses: dict[str, int] = {}
         for item in dependencies:
             statuses[item["status"]] = statuses.get(item["status"], 0) + 1
+        cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
+        unresolved = [m for m in manifests if m["ecosystem"] not in {"cargo", "cargo-lock"}]
+        if cargo_manifest_count != len(metadata_paths):
+            unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
+        if not manifests:
+            coverage_status = "REVIEWED_NO_DEPENDENCIES" if coverage_decision else "UNKNOWN"
+        elif unresolved:
+            coverage_status = "INCOMPLETE"
+        else:
+            coverage_status = "RESOLVED_MANIFESTS"
         report = {"schema_version": "1.0", "policy_version": POLICY_VERSION, "repository": repository,
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
+                  "coverage_status": coverage_status, "coverage_decision": coverage_decision,
                   "manifests": manifests, "assets": assets,
                   "license_documents": license_documents, "submodules": submodules,
                   "summary": statuses,
@@ -442,12 +453,9 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
-    unresolved = [m for m in manifests
-                  if m["ecosystem"] not in {"cargo", "cargo-lock"}]
-    if cargo_manifest_count != len(metadata_paths):
-        unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
-    blocked = (any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
+    blocked = (coverage_status in {"UNKNOWN", "INCOMPLETE"}
+               or bool(unresolved)
+               or any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
                or any(a["status"] != "PASS" for a in assets) or bool(submodules))
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
@@ -455,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"BLOCKED: {len(dependencies)} dependency records; {len(unresolved)} unresolved manifest(s)")
         return 1
     print(f"Inventory written: {args.json} and {args.markdown}")
-    print(f"Dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; assets: {len(assets)}; submodules: {len(submodules)}")
+    print(f"Coverage: {coverage_status}; dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; assets: {len(assets)}; submodules: {len(submodules)}")
     return 0
 
 
