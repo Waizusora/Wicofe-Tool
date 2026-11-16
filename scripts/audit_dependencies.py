@@ -138,7 +138,8 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             "upstream_url": pkg.get("repository"), "license": license_expr,
             "license_category": category, "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
-            "enabled_features": enabled_features, "targets": [t.get("kind", []) for t in pkg.get("targets", [])],
+            "enabled_features": enabled_features, "dependency_kinds": dependency_kinds,
+            "targets": [t.get("kind", []) for t in pkg.get("targets", [])],
             "status": status, "distribution": "not_established_by_metadata",
             "decision": decision,
         })
@@ -246,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     unresolved = [m for m in manifests if m["ecosystem"] != "cargo" and m["ecosystem"] != "cargo-lock"]
-    blocked = any(d["status"] != "PASS" for d in dependencies)
+    blocked = any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
     if args.strict and (blocked or unresolved):
