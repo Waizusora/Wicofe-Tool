@@ -264,6 +264,63 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     return found
 
 
+def scan_github_actions(workspace: Path, repository: str,
+                       decisions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Inventory external actions used by workflows/composite actions as build-time deps."""
+    records = []
+    uses_pattern = re.compile(r"^\s*uses:\s*([^\s#]+)", re.MULTILINE)
+    action_files = list(workspace.glob(".github/workflows/*.yml"))
+    action_files += list(workspace.glob(".github/workflows/*.yaml"))
+    action_files += list(workspace.glob(".github/actions/**/action.yml"))
+    action_files += list(workspace.glob(".github/actions/**/action.yaml"))
+    for path in sorted(set(action_files)):
+        content = path.read_text(encoding="utf-8", errors="replace")
+        for line_number, match in enumerate(content.splitlines(), start=1):
+            found = uses_pattern.match(line_number and content.splitlines()[line_number - 1])
+            if not found:
+                continue
+            value = found.group(1).strip("'\"")
+            if value.startswith("./"):
+                continue
+            if value.startswith("docker://"):
+                name, revision = value[len("docker://"):], "container-reference"
+                source = value
+            else:
+                if "@" not in value:
+                    name, revision = value, "UNPINNED"
+                else:
+                    name, revision = value.rsplit("@", 1)
+                source = f"https://github.com/{name.split('/')[0]}/{name.split('/')[1]}" if "/" in name else None
+            key = f"github-actions:{name}:{revision}"
+            decision = decisions.get(key)
+            license_expr = decision.get("license") if decision else None
+            category = classify_license(license_expr)
+            if category.startswith("PROHIBITED"):
+                status = "REJECTED"
+            elif category == "UNKNOWN":
+                status = "UNKNOWN"
+            elif decision:
+                if category == "LGPL" and not decision.get("conditions_verified"):
+                    status = "NEEDS_REVIEW"
+                else:
+                    status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
+            else:
+                status = "NEEDS_REVIEW"
+            records.append({
+                "repository": repository, "ecosystem": "github-actions", "name": name,
+                "version": revision, "package_id": key, "source": source,
+                "source_commit": revision if re.fullmatch(r"[0-9a-fA-F]{40}", revision) else None,
+                "upstream_url": source, "license": license_expr, "license_category": category,
+                "license_evidence": [{"kind": "workflow_uses", "path": str(path.relative_to(workspace)),
+                                     "line": line_number, "value": value}],
+                "dependency_type": "build-time", "enabled_features": [],
+                "status": status, "distribution": "build-time dependency; release inclusion not established",
+                "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                "decision": decision,
+            })
+    return records
+
+
 def scan_assets(workspace: Path, repository: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Hash non-code assets and vendored/generated trees without assuming approval."""
     assets: list[dict[str, Any]] = []
@@ -418,6 +475,7 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions))
+        dependencies.extend(scan_github_actions(workspace, repository, decisions))
         dependencies = merge_cargo_records(dependencies)
         # Without cargo metadata, preserve lockfile inventory but never infer licenses.
         if not metadata_paths:
@@ -460,7 +518,8 @@ def main(argv: list[str] | None = None) -> int:
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
     if args.strict and (blocked or unresolved):
-        print(f"BLOCKED: {len(dependencies)} dependency records; {len(unresolved)} unresolved manifest(s)")
+        print(f"BLOCKED: coverage={coverage_status}; {len(dependencies)} dependency records; "
+              f"{len(unresolved)} unresolved manifest(s); {len(assets)} asset(s); {len(submodules)} submodule(s)")
         return 1
     print(f"Inventory written: {args.json} and {args.markdown}")
     print(f"Coverage: {coverage_status}; dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; assets: {len(assets)}; submodules: {len(submodules)}")
