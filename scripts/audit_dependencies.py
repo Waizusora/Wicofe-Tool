@@ -91,7 +91,7 @@ def is_permissive_license_branch(branch: str) -> bool:
 def _branch_has_prohibited_license(branch: str) -> bool:
     value = branch.upper()
     return ("AGPL" in value
-            or bool(re.search(r"\\bGPL(?:-|\\s)|\\bGPL\\b", value)))
+            or bool(re.search(r"\bGPL(?:-|\s)|\bGPL\b", value)))
 
 
 def license_nonprohibited_alternatives(expression: str | None) -> list[str]:
@@ -157,7 +157,7 @@ def license_decision_status(expression: str | None,
         if not selected:
             return "NEEDS_REVIEW"
         branches = license_nonprohibited_alternatives(expression)
-        normalized = {re.sub(r"\\s+", " ", branch.strip()).upper() for branch in branches}
+        normalized = {re.sub(r"\s+", " ", branch.strip()).upper() for branch in branches}
         selected_key = re.sub(r"\\s+", " ", selected.strip()).upper()
         if selected_key not in normalized:
             return "NEEDS_REVIEW"
