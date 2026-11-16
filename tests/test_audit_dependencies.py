@@ -57,6 +57,57 @@ class LicenseAuditTests(unittest.TestCase):
                 "scope": "repo/target/release", "conditions": "retain notices"}}}))
             self.assertIn("cargo:lib:1.0.0", load_decisions(p))
 
+    def test_lgpl_optional_permissive_branch_requires_explicit_selection(self):
+        expression = "MIT OR Apache-2.0 OR LGPL-2.1-or-later"
+        self.assertEqual("LGPL_OPTIONAL_ALTERNATIVE", classify_license(expression))
+        metadata = {
+            "packages": [{"id": "r-efi 5.3.0 (registry)", "name": "r-efi", "version": "5.3.0",
+                          "license": expression}],
+            "workspace_members": ["root"],
+            "resolve": {"nodes": [{"id": "root", "deps": [{"pkg": "r-efi 5.3.0 (registry)"}]},
+                                  {"id": "r-efi 5.3.0 (registry)", "deps": []}]}
+        }
+        approval = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                    "evidence": "selected SPDX alternative reviewed", "scope": "WDE nested compositor",
+                    "conditions": "preserve selected license notice", "selected_license": "MIT"}
+        row = cargo_records(metadata, "fixture", {"cargo:r-efi:5.3.0": approval})[0]
+        self.assertEqual("PASS", row["status"])
+        self.assertEqual(["MIT", "Apache-2.0"], row["license_alternatives"])
+        lgpl = dict(approval, selected_license="LGPL-2.1-or-later", conditions_verified=True)
+        row = cargo_records(metadata, "fixture", {"cargo:r-efi:5.3.0": lgpl})[0]
+        self.assertEqual("APPROVED_WITH_CONDITIONS", row["status"])
+
+    def test_cargo_lock_checksum_and_incoming_dependency_edge(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Cargo.lock").write_text(
+                'version = 4\n[[package]]\nname = "lib"\nversion = "1.0.0"\n'
+                'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+                'checksum = "0123456789abcdef"\n', encoding="utf-8")
+            checksums = __import__("audit_dependencies").cargo_lock_checksums(root)
+            metadata = {
+                "packages": [
+                    {"id": "root", "name": "root", "version": "1.0.0",
+                     "dependencies": [{"name": "lib", "req": "^1", "kind": None,
+                                       "optional": True, "uses_default_features": False,
+                                       "features": ["serde"], "target": "cfg(target_arch = \\"aarch64\\")"}]},
+                    {"id": "lib 1.0.0 (registry)", "name": "lib", "version": "1.0.0",
+                     "license": "MIT", "source": "registry+https://github.com/rust-lang/crates.io-index"}
+                ],
+                "workspace_members": ["root"],
+                "resolve": {"nodes": [
+                    {"id": "root", "deps": [{"pkg": "lib 1.0.0 (registry)", "name": "lib",
+                                              "dep_kinds": [{"kind": None, "target": "cfg(target_arch = \\"aarch64\\")"}]}]},
+                    {"id": "lib 1.0.0 (registry)", "features": [], "deps": []}
+                ]}
+            }
+            row = cargo_records(metadata, "fixture", {}, "all-features-aarch64", checksums)[0]
+            self.assertEqual("0123456789abcdef", row["checksum"])
+            self.assertEqual("direct", row["dependency_type"])
+            self.assertEqual("root", row["required_by"][0]["parent_name"])
+            self.assertTrue(row["required_by"][0]["declarations"][0]["optional"])
+            self.assertEqual("normal", row["dependency_kinds"][0])
+
     def test_lgpl_requires_verified_conditions(self):
         metadata = {
             "packages": [{"id": "lib 1.0.0 (registry)", "name": "lib", "version": "1.0.0", "license": "LGPL-2.1-only"}],
