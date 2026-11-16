@@ -134,13 +134,18 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         evidence = []
         if license_expr:
             evidence.append({"kind": "cargo_metadata_license", "value": license_expr})
-        if license_file:
-            file_path = Path(pkg.get("manifest_path", "")).parent / license_file
+        package_root = Path(pkg.get("manifest_path", "")).parent
+        license_candidates = [package_root / license_file] if license_file else [
+            package_root / candidate for candidate in
+            ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING", "COPYING.LESSER", "NOTICE")
+        ]
+        for file_path in license_candidates:
             if file_path.is_file():
                 raw = file_path.read_bytes()
-                evidence.append({"kind": "license_file", "path": str(file_path), "sha256": hashlib.sha256(raw).hexdigest()})
-            else:
-                evidence.append({"kind": "missing_license_file", "path": str(file_path)})
+                evidence.append({"kind": "license_file", "path": str(file_path),
+                                 "sha256": hashlib.sha256(raw).hexdigest()})
+        if license_file and not any(item.get("kind") == "license_file" for item in evidence):
+            evidence.append({"kind": "missing_license_file", "path": str(package_root / license_file)})
         key = package_key(name, version)
         decision = decisions.get(key)
         category = classify_license(license_expr)
@@ -162,15 +167,19 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             for dep in node.get("deps", [])
             for kind in dep.get("dep_kinds", [])
         })
+        source = pkg.get("source")
+        source_commit = source.rsplit("#", 1)[-1] if source and source.startswith("git+") and "#" in source else None
         records.append({
             "repository": repository, "ecosystem": "cargo", "name": name, "version": version,
-            "package_id": pkg_id, "source": pkg.get("source"), "checksum": pkg.get("checksum"),
+            "package_id": pkg_id, "source": source, "source_commit": source_commit,
+            "checksum": pkg.get("checksum"),
             "upstream_url": pkg.get("repository"), "license": license_expr,
             "license_category": category, "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
             "enabled_features": enabled_features, "dependency_kinds": dependency_kinds,
             "targets": [t.get("kind", []) for t in pkg.get("targets", [])],
             "status": status, "distribution": "not_established_by_metadata",
+            "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
             "decision": decision,
         })
     return records
@@ -196,11 +205,11 @@ def merge_cargo_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if item not in evidence:
                 evidence.append(item)
         if current.get("license") != record.get("license"):
+            license_values = {str(current.get("license")), str(record.get("license"))}
             current["status"] = "UNKNOWN"
             current["license_category"] = "UNKNOWN"
             current["license"] = None
-            evidence.append({"kind": "conflicting_license_metadata", "values": sorted({
-                str(current.get("license")), str(record.get("license"))})})
+            evidence.append({"kind": "conflicting_license_metadata", "values": sorted(license_values)})
     return [grouped[key] for key in sorted(grouped)]
 
 
@@ -286,8 +295,9 @@ def scan_assets(workspace: Path, repository: str) -> tuple[list[dict[str, Any]],
             "license_evidence": [], "distribution": "not_established",
         })
     submodules = []
-    gitmodules = workspace / ".gitmodules"
-    if gitmodules.is_file():
+    for gitmodules in sorted(workspace.rglob(".gitmodules")):
+        if any(part in excluded for part in gitmodules.parts):
+            continue
         text = gitmodules.read_text(encoding="utf-8", errors="replace")
         current: dict[str, str] = {}
         for line in text.splitlines():
@@ -295,16 +305,17 @@ def scan_assets(workspace: Path, repository: str) -> tuple[list[dict[str, Any]],
             if stripped.startswith("[submodule "):
                 if current:
                     submodules.append(current)
-                current = {"repository": repository, "status": "UNKNOWN"}
+                current = {"repository": repository, "status": "UNKNOWN",
+                           "manifest": str(gitmodules.relative_to(workspace))}
             elif "=" in stripped and current:
                 key, value = (part.strip() for part in stripped.split("=", 1))
                 if key in {"path", "url", "branch"}:
                     current[key] = value
         if current:
             submodules.append(current)
-        for item in submodules:
-            item["license_evidence"] = []
-            item["source_commit"] = None
+    for item in submodules:
+        item["license_evidence"] = []
+        item["source_commit"] = None
     return assets, [*license_documents, *submodules]
 
 
