@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import sys
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -424,6 +425,19 @@ def scan_assets(workspace: Path, repository: str) -> tuple[list[dict[str, Any]],
     return assets, [*license_documents, *submodules]
 
 
+def git_revision(workspace: Path) -> str | None:
+    """Capture the exact checked-out repository revision for audit reproducibility."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(workspace), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        value = result.stdout.strip()
+        return value if re.fullmatch(r"[0-9a-fA-F]{40}", value) else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     lines = ["# Dependency License Audit", "", f"- Policy: {report['policy_version']}",
              f"- Repository: {report['repository']}", f"- Generated: {report['generated_at']}",
@@ -528,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             coverage_status = "RESOLVED_MANIFESTS"
         report = {"schema_version": "1.0", "policy_version": POLICY_VERSION, "repository": repository,
+                  "repository_commit": git_revision(workspace),
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
                   "manifests": manifests, "assets": assets,
