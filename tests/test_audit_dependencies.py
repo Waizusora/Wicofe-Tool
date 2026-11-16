@@ -254,7 +254,106 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "build.sh").write_text(
                 'LIMINE_VERSION="12.9.6"\n'
                 f'LIMINE_ARCHIVE_SHA256="{checksum}"\n'
-                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v12.9.6/limine-binary.tar.xz"\n'
+                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v
+                'curl -L "$ARCHIVE_URL"\n'
+                'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
+                'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n', encoding="utf-8")
+            evidence = {"downloaded-artifact:Limine:12.9.6": {
+                "source_commit": "b" * 40, "license": "BSD-2-Clause",
+                "upstream_url": "https://github.com/Limine-Bootloader/Limine",
+                "release_asset_sha256": checksum,
+                "license_evidence": [{"url": "https://example.invalid/COPYING"}],
+                "bundled_component_licenses": ["MIT", "BSD-2-Clause"],
+                "tag_signature_verified": True,
+            }}
+            scripts, dependencies = scan_build_scripts(root, "fixture", {}, evidence)
+            item = next(dep for dep in dependencies if dep["ecosystem"] == "downloaded-artifact")
+            self.assertEqual("12.9.6", item["version"])
+            self.assertEqual("b" * 40, item["source_commit"])
+            self.assertTrue(item["checksum_verified_against_release_metadata"])
+            self.assertIn("3RDPARTY.md", item["distribution"])
+            self.assertEqual("NEEDS_REVIEW", item["status"])
+
+    def test_workflow_runner_and_apt_packages_are_inventoried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text(
+                "jobs:\n  build:\n    runs-on: ubuntu-26.04\n    steps:\n"
+                "      - run: |\n          sudo apt-get update\n"
+                "          sudo apt-get install --yes \\\n"
+                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\\n"
+                "            xorriso=1:1.5.6-1.1ubuntu4\n", encoding="utf-8")
+            scripts, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, {})
+            packages = [item for item in dependencies if item["ecosystem"] == "system-package"]
+            self.assertEqual({"qemu-system-x86", "xorriso"}, {item["name"] for item in packages})
+            self.assertTrue(any(item["ecosystem"] == "github-runner-image" for item in dependencies))
+
+    def test_prohibited_apt_package_is_rejected_from_license_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text(
+                "jobs:\n  build:\n    steps:\n      - run: sudo apt-get install --yes qemu-system-x86=1:10.2.1+ds-1ubuntu3.3\n",
+                encoding="utf-8")
+            key = "system-package:qemu-system-x86:1:10.2.1+ds-1ubuntu3.3"
+            evidence = {key: {"license": "GPL-2.0-or-later", "source_revision": "QEMU v10.2.1",
+                              "upstream_url": "https://github.com/qemu/qemu",
+                              "license_evidence": [{"url": "https://example.invalid/COPYING"}]}}
+            _, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, evidence)
+            item = next(dep for dep in dependencies if dep["ecosystem"] == "system-package")
+            self.assertEqual("REJECTED", item["status"])
+            self.assertEqual("GPL-2.0-or-later", item["license"])
+
+    def test_cargo_dependency_alias_matches_hyphenated_package_name(self):
+        metadata = {
+            "packages": [
+                {"id": "root", "name": "root", "version": "1.0.0",
+                 "dependencies": [{"name": "r-efi", "req": "^5", "rename": None,
+                                   "optional": False, "features": [],
+                                   "target": "cfg(target_os = \\"uefi\\")"}]},
+                {"id": "r-efi 5.3.0 (registry)", "name": "r-efi", "version": "5.3.0",
+                 "license": "MIT OR Apache-2.0"}
+            ],
+            "workspace_members": ["root"],
+            "resolve": {"nodes": [
+                {"id": "root", "deps": [{"pkg": "r-efi 5.3.0 (registry)", "name": "r_efi",
+                                          "dep_kinds": [{"kind": None, "target": "cfg(target_os = \\"uefi\\")"}]}]},
+                {"id": "r-efi 5.3.0 (registry)", "features": [], "deps": []}
+            ]}
+        }
+        row = cargo_records(metadata, "fixture", {})[0]
+        self.assertEqual("r-efi", row["required_by"][0]["declarations"][0]["name"])
+        self.assertEqual("cfg(target_os = \\"uefi\\")",
+                         row["required_by"][0]["declarations"][0]["target"])
+
+    def test_rust_toolchain_manifest_records_exact_version_and_targets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "rust-toolchain.toml").write_text(
+                '[toolchain]\nchannel = "1.100.0"\ntargets = ["x86_64-unknown-none", "aarch64-unknown-none"]\n',
+                encoding="utf-8")
+            evidence = {"rust-toolchain:rustc:1.100.0": {
+                "source_commit": "c" * 40, "license": "MIT OR Apache-2.0",
+                "upstream_url": "https://github.com/rust-lang/rust",
+                "license_evidence": [{"url": "https://example.invalid/LICENSE-MIT"}]}}
+            rows = scan_rust_toolchain(root, "fixture", {}, evidence)
+            self.assertEqual("1.100.0", rows[0]["version"])
+            self.assertEqual(["x86_64-unknown-none", "aarch64-unknown-none"], rows[0]["targets"])
+            self.assertEqual("NEEDS_REVIEW", rows[0]["status"])
+
+    def test_lockfile_does_not_claim_license(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "Cargo.lock"
+            p.write_text('version = 3\n[[package]]\nname = "sample"\nversion = "1.2.3"\n')
+            rows = lockfile_records(p, "fixture")
+            self.assertEqual("UNKNOWN", rows[0]["status"])
+            self.assertIsNone(rows[0]["license"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+ + '{LIMINE_VERSION}/limine-binary.tar.xz"\n'
                 'curl -L "$ARCHIVE_URL"\n'
                 'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
                 'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n', encoding="utf-8")
