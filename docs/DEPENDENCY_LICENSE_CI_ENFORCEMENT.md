@@ -20,6 +20,7 @@ Strict mode blocks on:
 - Non-Cargo manifests without an ecosystem resolver.
 - Repositories with no dependency manifests and no human-reviewed coverage attestation.
 - Unresolved vendored assets, generated assets, firmware, fonts, codecs, schemas, binary assets or submodules.
+- Unreviewed hosted runner images, apt/system packages, downloaded release archives and host build tools.
 - GitHub Actions references without verified license/source evidence.
 
 The scanner never creates legal approval. Decision records and no-manifest coverage attestations must be reviewed and supplied by authorized humans.
