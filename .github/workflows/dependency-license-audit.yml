@@ -19,15 +19,22 @@ jobs:
           python-version: "3.11"
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Resolve Cargo dependency graph
+        run: |
+          mkdir -p reports
+          if [ -f Cargo.toml ]; then
+            cargo metadata --format-version 1 --locked > reports/cargo-metadata.json
+          fi
       - name: Generate dependency inventory and enforce policy
         run: |
-          python3 scripts/audit_dependencies.py \
-            --workspace . \
-            --repository Wicofe-Tools \
+          set -- --workspace . --repository Wicofe-Tools \
             --decisions config/dependency_license_decisions.example.json \
-            --strict \
-            --json reports/dependency-audit.json \
+            --strict --json reports/dependency-audit.json \
             --markdown reports/DEPENDENCY_LICENSE_AUDIT.md
+          if [ -f reports/cargo-metadata.json ]; then
+            set -- "$@" --cargo-metadata reports/cargo-metadata.json
+          fi
+          python3 scripts/audit_dependencies.py "$@"
       - name: Upload audit reports
         if: always()
         uses: actions/upload-artifact@v4
