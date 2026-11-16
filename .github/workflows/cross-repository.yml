@@ -1,0 +1,37 @@
+name: Cross-Repository Baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Wicofe-Tools
+        uses: actions/checkout@v4
+        with:
+          path: Wicofe-Tools
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check out project repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p workspace
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            git clone --depth 1 "https://github.com/Waizusora/$repo.git" "workspace/$repo"
+          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+      - name: Validate repository baseline
+        run: >-
+          python Wicofe-Tools/scripts/check_repository_matrix.py
+          --manifest Wicofe-Tools/config/repositories.json
+          --workspace workspace
