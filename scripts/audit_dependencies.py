@@ -199,6 +199,19 @@ def markdown_report(report: dict[str, Any]) -> str:
               "|---|---|---|---|"]
     for item in report["manifests"]:
         lines.append(f"| {item['path']} | {item['ecosystem']} | {item['status']} | {item['resolution']} |")
+    sections = [
+        ("Replacement / rejection queue", [d for d in report["dependencies"] if d.get("status") == "REJECTED"]),
+        ("LGPL requiring conditional approval", [d for d in report["dependencies"] if d.get("license_category") == "LGPL"]),
+        ("Unknown license evidence", [d for d in report["dependencies"] if d.get("status") == "UNKNOWN"]),
+        ("Approved dependencies", [d for d in report["dependencies"] if d.get("status") in {"PASS", "APPROVED_WITH_CONDITIONS"}]),
+    ]
+    for heading, rows in sections:
+        lines += ["", f"## {heading}", ""]
+        if not rows:
+            lines.append("None recorded.")
+        else:
+            for item in rows:
+                lines.append(f"- {item.get('name')} {item.get('version')} — {item.get('license') or 'UNKNOWN'} ({item.get('status')})")
     lines += ["", "## Enforcement", "",
               "This report is technical evidence, not legal approval. GPL/AGPL records are rejected. "
               "Unknown, unreviewed, or incomplete ecosystems block release. Human decisions must be "
