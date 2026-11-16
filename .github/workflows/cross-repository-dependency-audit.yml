@@ -1,6 +1,8 @@
 name: Cross-repository dependency license audit
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: "23 4 * * 1"
@@ -30,7 +32,7 @@ jobs:
           while IFS= read -r repo; do
             [ -n "$repo" ] || continue
             git clone --depth 1 "https://github.com/Waizusora/$repo.git" "workspace/$repo"
-          done < <(python -c 'import json; print("\\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
       - name: Verify canonical repository set
         run: |
           python Wicofe-Tools/scripts/check_repository_matrix.py \
@@ -64,7 +66,7 @@ jobs:
               fi
             done
             python Wicofe-Tools/scripts/audit_dependencies.py "${args[@]}" || failed=1
-          done < <(python -c 'import json; print("\\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
           if [ "$failed" -ne 0 ]; then
             echo "BLOCKED: one or more repositories have unresolved or unapproved dependencies."
             exit 1
