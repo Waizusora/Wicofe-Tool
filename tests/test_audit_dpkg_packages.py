@@ -52,7 +52,7 @@ class DpkgAuditTests(unittest.TestCase):
                 "Files: tests/*\nLicense: GPL-2+\n", encoding="utf-8")
             item = copyright_metadata(root, package)
             self.assertEqual("NEEDS_REVIEW", item["status"])
-            self.assertEqual("LGPL", item["license_category"])
+            self.assertEqual("MIXED_REVIEW", item["license_category"])
 
     def test_missing_copyright_is_unknown(self):
         with tempfile.TemporaryDirectory() as tmp:
