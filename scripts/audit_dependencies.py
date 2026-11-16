@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import sys
 import subprocess
 import tomllib
