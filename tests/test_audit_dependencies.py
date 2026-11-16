@@ -311,20 +311,20 @@ class LicenseAuditTests(unittest.TestCase):
                 {"id": "root", "name": "root", "version": "1.0.0",
                  "dependencies": [{"name": "r-efi", "req": "^5", "rename": None,
                                    "optional": False, "features": [],
-                                   "target": "cfg(target_os = \\"uefi\\")"}]},
+                                   "target": "cfg(target_os = \"uefi\")"}]},
                 {"id": "r-efi 5.3.0 (registry)", "name": "r-efi", "version": "5.3.0",
                  "license": "MIT OR Apache-2.0"}
             ],
             "workspace_members": ["root"],
             "resolve": {"nodes": [
                 {"id": "root", "deps": [{"pkg": "r-efi 5.3.0 (registry)", "name": "r_efi",
-                                          "dep_kinds": [{"kind": None, "target": "cfg(target_os = \\"uefi\\")"}]}]},
+                                          "dep_kinds": [{"kind": None, "target": "cfg(target_os = \"uefi\")"}]}]},
                 {"id": "r-efi 5.3.0 (registry)", "features": [], "deps": []}
             ]}
         }
         row = cargo_records(metadata, "fixture", {})[0]
         self.assertEqual("r-efi", row["required_by"][0]["declarations"][0]["name"])
-        self.assertEqual("cfg(target_os = \\"uefi\\")",
+        self.assertEqual("cfg(target_os = \"uefi\")",
                          row["required_by"][0]["declarations"][0]["target"])
 
     def test_rust_toolchain_manifest_records_exact_version_and_targets(self):
