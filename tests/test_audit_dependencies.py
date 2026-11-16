@@ -289,6 +289,22 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual({"qemu-system-x86", "xorriso"}, {item["name"] for item in packages})
             self.assertTrue(any(item["ecosystem"] == "github-runner-image" for item in dependencies))
 
+    def test_prohibited_apt_package_is_rejected_from_license_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / ".github" / "workflows"
+            root.mkdir(parents=True)
+            (root / "ci.yml").write_text(
+                "jobs:\n  build:\n    steps:\n      - run: sudo apt-get install --yes qemu-system-x86=1:10.2.1+ds-1ubuntu3.3\n",
+                encoding="utf-8")
+            key = "system-package:qemu-system-x86:1:10.2.1+ds-1ubuntu3.3"
+            evidence = {key: {"license": "GPL-2.0-or-later", "source_revision": "QEMU v10.2.1",
+                              "upstream_url": "https://github.com/qemu/qemu",
+                              "license_evidence": [{"url": "https://example.invalid/COPYING"}]}}
+            _, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, evidence)
+            item = next(dep for dep in dependencies if dep["ecosystem"] == "system-package")
+            self.assertEqual("REJECTED", item["status"])
+            self.assertEqual("GPL-2.0-or-later", item["license"])
+
     def test_rust_toolchain_manifest_records_exact_version_and_targets(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
