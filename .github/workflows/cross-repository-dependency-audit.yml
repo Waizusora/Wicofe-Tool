@@ -52,6 +52,7 @@ jobs:
             root="workspace/$repo"
             args=(--workspace "$root" --repository "$repo"
               --decisions Wicofe-Tools/config/dependency_license_decisions.example.json
+              --evidence Wicofe-Tools/config/upstream_license_evidence.json
               --coverage Wicofe-Tools/config/repository_dependency_coverage.example.json
               --strict --json "reports/dependencies/$repo.json"
               --markdown "reports/dependencies/$repo.md")
