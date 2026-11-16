@@ -326,6 +326,36 @@
       ],
       "security_status": "NOT_ASSESSED",
       "maintenance_status": "NOT_ASSESSED"
+    },
+    "system-package:clang-22:1:22.1.2-1ubuntu1": {
+      "name": "clang-22",
+      "source_revision": "llvmorg-22.1.2",
+      "source_commit": "1ab49a973e210e97d61e5db6557180dcb92c3e98",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "upstream_url": "https://github.com/llvm/llvm-project",
+      "license_evidence": [
+        {
+          "url": "https://github.com/llvm/llvm-project/blob/1ab49a973e210e97d61e5db6557180dcb92c3e98/llvm/LICENSE.TXT",
+          "kind": "upstream-license"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
+    },
+    "system-package:llvm-22-tools:1:22.1.2-1ubuntu1": {
+      "name": "llvm-22-tools",
+      "source_revision": "llvmorg-22.1.2",
+      "source_commit": "1ab49a973e210e97d61e5db6557180dcb92c3e98",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "upstream_url": "https://github.com/llvm/llvm-project",
+      "license_evidence": [
+        {
+          "url": "https://github.com/llvm/llvm-project/blob/1ab49a973e210e97d61e5db6557180dcb92c3e98/llvm/LICENSE.TXT",
+          "kind": "upstream-license"
+        }
+      ],
+      "security_status": "NOT_ASSESSED",
+      "maintenance_status": "NOT_ASSESSED"
     }
   }
 }
