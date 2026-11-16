@@ -88,22 +88,44 @@ def is_permissive_license_branch(branch: str) -> bool:
     ))
 
 
-def license_alternatives(expression: str | None) -> list[str]:
+def _branch_has_prohibited_license(branch: str) -> bool:
+    value = branch.upper()
+    return ("AGPL" in value
+            or bool(re.search(r"\\bGPL(?:-|\\s)|\\bGPL\\b", value)))
+
+
+def license_nonprohibited_alternatives(expression: str | None) -> list[str]:
+    """Return OR branches that do not require GPL/AGPL; human selection is still mandatory."""
     if not expression:
         return []
-    return [branch for branch in split_top_level_or(expression)
+    branches = split_top_level_or(expression)
+    if len(branches) < 2:
+        return []
+    return [branch for branch in branches if not _branch_has_prohibited_license(branch)]
+
+
+def license_alternatives(expression: str | None) -> list[str]:
+    """Return recognized permissive OR branches; this is not an approval."""
+    return [branch for branch in license_nonprohibited_alternatives(expression)
             if is_permissive_license_branch(branch)]
 
 
 def classify_license(expression: str | None) -> str:
-    """Conservative SPDX identifier trigger classification; not a legal parser."""
+    """Conservative SPDX/Debian expression trigger classification; not a legal parser."""
     if not expression or not expression.strip():
         return "UNKNOWN"
-    value = expression.upper()
-    if re.search(r"\bAGPL(?:-|\\s)", value) or "AGPL" in value:
+    branches = split_top_level_or(expression)
+    has_agpl = any("AGPL" in branch.upper() for branch in branches)
+    has_gpl = any(_branch_has_prohibited_license(branch) and "AGPL" not in branch.upper()
+                  for branch in branches)
+    alternatives = license_nonprohibited_alternatives(expression)
+    if (has_agpl or has_gpl) and alternatives:
+        return "AGPL_OPTIONAL_ALTERNATIVE" if has_agpl else "GPL_OPTIONAL_ALTERNATIVE"
+    if has_agpl:
         return "PROHIBITED_AGPL"
-    if re.search(r"\bGPL(?:-|\\s)", value) or re.search(r"\bGPL\b", value):
+    if has_gpl:
         return "PROHIBITED_GPL"
+    value = expression.upper()
     if "LGPL" in value:
         return "LGPL_OPTIONAL_ALTERNATIVE" if license_alternatives(expression) else "LGPL"
     if any(token in value for token in ("MPL", "EPL", "CDDL", "OSL", "EUPL", "SSPL")):
@@ -111,6 +133,47 @@ def classify_license(expression: str | None) -> str:
     if any(token in value for token in ("UNLICENSED", "PROPRIETARY", "CUSTOM", "SEE LICENSE")):
         return "RESTRICTED_REVIEW"
     return "OTHER_REVIEW"
+
+
+def license_decision_status(expression: str | None,
+                            decision: dict[str, Any] | None) -> str:
+    """Apply a human decision without ever selecting a license branch automatically."""
+    category = classify_license(expression)
+    if category.startswith("PROHIBITED"):
+        return "REJECTED"
+    if category == "UNKNOWN":
+        return "UNKNOWN"
+    if not decision:
+        return "NEEDS_REVIEW"
+    if decision.get("status") == "rejected":
+        return "REJECTED"
+
+    optional_categories = {
+        "LGPL_OPTIONAL_ALTERNATIVE", "GPL_OPTIONAL_ALTERNATIVE",
+        "AGPL_OPTIONAL_ALTERNATIVE",
+    }
+    if category in optional_categories:
+        selected = decision.get("selected_license")
+        if not selected:
+            return "NEEDS_REVIEW"
+        branches = license_nonprohibited_alternatives(expression)
+        normalized = {re.sub(r"\\s+", " ", branch.strip()).upper() for branch in branches}
+        selected_key = re.sub(r"\\s+", " ", selected.strip()).upper()
+        if selected_key not in normalized:
+            return "NEEDS_REVIEW"
+        if is_permissive_license_branch(selected):
+            return "PASS"
+        if "LGPL" in selected.upper():
+            return ("APPROVED_WITH_CONDITIONS" if decision.get("conditions_verified")
+                    else "NEEDS_REVIEW")
+        return "APPROVED_WITH_CONDITIONS"
+
+    if category == "LGPL":
+        return ("APPROVED_WITH_CONDITIONS" if decision.get("conditions_verified")
+                else "NEEDS_REVIEW")
+    if category in {"COPYLEFT_REVIEW", "RESTRICTED_REVIEW"}:
+        return "APPROVED_WITH_CONDITIONS"
+    return "PASS"
 
 
 def load_decisions(path: Path | None) -> dict[str, dict[str, Any]]:
@@ -284,25 +347,8 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         decision = decisions.get(key)
         category = classify_license(license_expr)
         safe_alternatives = license_alternatives(license_expr)
-        if category.startswith("PROHIBITED"):
-            status = "REJECTED"
-        elif category == "UNKNOWN":
-            status = "UNKNOWN"
-        elif category == "LGPL":
-            status = "APPROVED_WITH_CONDITIONS" if decision and decision.get("conditions_verified") else "NEEDS_REVIEW"
-        elif category == "LGPL_OPTIONAL_ALTERNATIVE":
-            selected = decision.get("selected_license") if decision else None
-            normalized = {branch.upper() for branch in safe_alternatives}
-            if decision and selected and selected.upper() in normalized:
-                status = "PASS"
-            elif decision and selected and "LGPL" in selected.upper() and decision.get("conditions_verified"):
-                status = "APPROVED_WITH_CONDITIONS"
-            else:
-                status = "NEEDS_REVIEW"
-        elif decision:
-            status = "PASS"
-        else:
-            status = "NEEDS_REVIEW"
+        nonprohibited_alternatives = license_nonprohibited_alternatives(license_expr)
+        status = license_decision_status(license_expr, decision)
         node = nodes.get(pkg_id, {})
         enabled_features = sorted(node.get("features", []))
         incoming_edges = incoming.get(pkg_id, [])
@@ -318,6 +364,7 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             "package_id": pkg_id, "source": source, "source_commit": source_commit,
             "checksum": checksum, "upstream_url": pkg.get("repository"), "license": license_expr,
             "license_category": category, "license_alternatives": safe_alternatives,
+            "license_nonprohibited_alternatives": nonprohibited_alternatives,
             "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
             "required_by": incoming_edges, "enabled_features": enabled_features,
@@ -410,14 +457,7 @@ def scan_rust_toolchain(workspace: Path, repository: str,
     decision = decisions.get(key)
     license_expr = evidence_record.get("license")
     category = classify_license(license_expr)
-    if category.startswith("PROHIBITED"):
-        status = "REJECTED"
-    elif category == "UNKNOWN":
-        status = "UNKNOWN"
-    elif decision:
-        status = "PASS"
-    else:
-        status = "NEEDS_REVIEW"
+    status = license_decision_status(license_expr, decision)
     license_evidence = [{"kind": "rust-toolchain-config", "path": "rust-toolchain.toml",
                          "channel": channel, "targets": toolchain.get("targets", []),
                          "components": toolchain.get("components", [])}]
@@ -555,14 +595,7 @@ def scan_build_scripts(workspace: Path, repository: str,
                     decision = decisions.get(package_id)
                     license_expr = evidence_record.get("license")
                     category = classify_license(license_expr)
-                    if category.startswith("PROHIBITED"):
-                        status = "REJECTED"
-                    elif category == "UNKNOWN":
-                        status = "UNKNOWN"
-                    elif decision:
-                        status = "PASS"
-                    else:
-                        status = "NEEDS_REVIEW"
+                    status = license_decision_status(license_expr, decision)
                     license_evidence = [{"kind": "apt_install", "path": rel, "line": line_number}]
                     license_evidence.extend(evidence_record.get("license_evidence", []))
                     dependencies.append({
@@ -651,14 +684,8 @@ def scan_build_scripts(workspace: Path, repository: str,
             category = classify_license(license_expr)
             if checksum and published_checksum and not checksum_matches:
                 status = "BLOCKED"
-            elif category.startswith("PROHIBITED"):
-                status = "REJECTED"
-            elif category == "UNKNOWN":
-                status = "UNKNOWN"
-            elif decision:
-                status = "PASS"
             else:
-                status = "NEEDS_REVIEW"
+                status = license_decision_status(license_expr, decision)
             line_number = content[:url_match.start()].count("\n") + 1
             license_evidence = [{"kind": "build_script_download", "path": rel,
                                  "line": line_number, "url": url}]
@@ -725,18 +752,8 @@ def scan_github_actions(workspace: Path, repository: str,
             license_expr = evidence_record.get("license")
             category = classify_license(license_expr)
             immutable_ref = bool(re.fullmatch(r"[0-9a-fA-F]{40}", revision))
-            if category.startswith("PROHIBITED"):
-                status = "REJECTED"
-            elif category == "UNKNOWN":
-                status = "UNKNOWN"
-            elif not immutable_ref:
-                status = "NEEDS_REVIEW"
-            elif decision:
-                if category == "LGPL" and not decision.get("conditions_verified"):
-                    status = "NEEDS_REVIEW"
-                else:
-                    status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
-            else:
+            status = license_decision_status(license_expr, decision)
+            if status not in {"REJECTED", "UNKNOWN"} and not immutable_ref:
                 status = "NEEDS_REVIEW"
             license_evidence = [{"kind": "workflow_uses", "path": str(path.relative_to(workspace)),
                                  "line": line_number, "value": value}]
