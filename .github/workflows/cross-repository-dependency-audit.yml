@@ -1,0 +1,80 @@
+name: Cross-repository dependency license audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Wicofe-Tools
+        uses: actions/checkout@v4
+        with:
+          path: Wicofe-Tools
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Check out all 29 project repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p workspace
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            git clone --depth 1 "https://github.com/Waizusora/$repo.git" "workspace/$repo"
+          done < <(python -c 'import json; print("\\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+      - name: Verify canonical repository set
+        run: |
+          python Wicofe-Tools/scripts/check_repository_matrix.py \
+            --manifest Wicofe-Tools/config/repositories.json \
+            --workspace workspace
+      - name: Resolve and audit every repository
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p reports/dependencies reports/cargo-metadata
+          failed=0
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            root="workspace/$repo"
+            args=(--workspace "$root" --repository "$repo"
+              --decisions Wicofe-Tools/config/dependency_license_decisions.example.json
+              --strict --json "reports/dependencies/$repo.json"
+              --markdown "reports/dependencies/$repo.md")
+            mapfile -d '' manifests < <(find "$root" -type f -name Cargo.toml
+              -not -path '*/.git/*' -not -path '*/target/*'
+              -not -path '*/node_modules/*' -not -path '*/.venv/*' -print0 | sort -z)
+            index=0
+            for manifest in "${manifests[@]}"; do
+              index=$((index + 1))
+              metadata="reports/cargo-metadata/$repo-$index.json"
+              if cargo metadata --format-version 1 --locked --manifest-path "$manifest" > "$metadata"; then
+                args+=(--cargo-metadata "$metadata")
+              else
+                echo "BLOCKED: Cargo metadata resolution failed: $repo / $manifest"
+                failed=1
+              fi
+            done
+            python Wicofe-Tools/scripts/audit_dependencies.py "${args[@]}" || failed=1
+          done < <(python -c 'import json; print("\\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+          if [ "$failed" -ne 0 ]; then
+            echo "BLOCKED: one or more repositories have unresolved or unapproved dependencies."
+            exit 1
+          fi
+      - name: Upload cross-repository audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wicofe-cross-repository-dependency-audit
+          path: |
+            reports/dependencies/
+            reports/cargo-metadata/
+          if-no-files-found: warn
