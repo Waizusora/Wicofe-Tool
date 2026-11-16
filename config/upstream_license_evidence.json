@@ -175,6 +175,58 @@
           "blob_sha": "ee6256cdb62a765749a71aae3abea32884301cd1"
         }
       ]
+    },
+    "github-actions:actions/checkout:d23441a48e516b6c34aea4fa41551a30e30af803": {
+      "name": "actions/checkout",
+      "ref": "d23441a48e516b6c34aea4fa41551a30e30af803",
+      "source_commit": "d23441a48e516b6c34aea4fa41551a30e30af803",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/checkout",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/checkout/blob/d23441a48e516b6c34aea4fa41551a30e30af803/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:actions/setup-python:ece7cb06caefa5fff74198d8649806c4678c61a1": {
+      "name": "actions/setup-python",
+      "ref": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "source_commit": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/setup-python",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/setup-python/blob/ece7cb06caefa5fff74198d8649806c4678c61a1/LICENSE",
+          "blob_sha": "a426ef259d6c5d705e9c1405075c3b318093c65e"
+        }
+      ]
+    },
+    "github-actions:actions/upload-artifact:b7c566a772e6b6bfb58ed0dc250532a479d7789f": {
+      "name": "actions/upload-artifact",
+      "ref": "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "source_commit": "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "license": "MIT",
+      "upstream_url": "https://github.com/actions/upload-artifact",
+      "license_evidence": [
+        {
+          "url": "https://github.com/actions/upload-artifact/blob/b7c566a772e6b6bfb58ed0dc250532a479d7789f/LICENSE",
+          "blob_sha": "a67dca8b4f65d6bd351f6b1e333ce2cd84d843a5"
+        }
+      ]
+    },
+    "github-actions:dtolnay/rust-toolchain:39008827e6b4319a349e9a42dfc90579dd25f1ca": {
+      "name": "dtolnay/rust-toolchain",
+      "ref": "39008827e6b4319a349e9a42dfc90579dd25f1ca",
+      "source_commit": "39008827e6b4319a349e9a42dfc90579dd25f1ca",
+      "license": "MIT",
+      "upstream_url": "https://github.com/dtolnay/rust-toolchain",
+      "license_evidence": [
+        {
+          "url": "https://github.com/dtolnay/rust-toolchain/blob/39008827e6b4319a349e9a42dfc90579dd25f1ca/LICENSE",
+          "blob_sha": "31aa79387f27e730e33d871925e152e35e428031"
+        }
+      ]
     }
   }
 }
