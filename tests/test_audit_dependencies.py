@@ -251,12 +251,16 @@ class LicenseAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             checksum = "a" * 64
-            (root / "build.sh").write_text(
+            url = "https://github.com/Limine-Bootloader/Limine/releases/download/v" + "$" + "{LIMINE_VERSION}/limine-binary.tar.xz"
+            script = (
                 'LIMINE_VERSION="12.9.6"\n'
                 f'LIMINE_ARCHIVE_SHA256="{checksum}"\n'
-                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v                'curl -L "$ARCHIVE_URL"\n'
+                f'ARCHIVE_URL="{url}"\n'
+                'curl -L "$ARCHIVE_URL"\n'
                 'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
-                'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n', encoding="utf-8")
+                'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n'
+            )
+            (root / "build.sh").write_text(script, encoding="utf-8")
             evidence = {"downloaded-artifact:Limine:12.9.6": {
                 "source_commit": "b" * 40, "license": "BSD-2-Clause",
                 "upstream_url": "https://github.com/Limine-Bootloader/Limine",
