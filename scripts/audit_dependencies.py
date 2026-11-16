@@ -135,6 +135,11 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             status = "NEEDS_REVIEW"
         node = nodes.get(pkg_id, {})
         enabled_features = sorted(node.get("features", []))
+        dependency_kinds = sorted({
+            kind.get("kind") or "normal"
+            for dep in node.get("deps", [])
+            for kind in dep.get("dep_kinds", [])
+        })
         records.append({
             "repository": repository, "ecosystem": "cargo", "name": name, "version": version,
             "package_id": pkg_id, "source": pkg.get("source"), "checksum": pkg.get("checksum"),
