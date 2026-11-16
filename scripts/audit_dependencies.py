@@ -424,6 +424,7 @@ def scan_build_scripts(workspace: Path, repository: str,
                     "docker-compose.yaml", "compose.yml", "compose.yaml"}
     script_extensions = {".sh", ".bash", ".ps1", ".bat", ".cmd", ".mk"}
     external_patterns = [
+        ("apt-update", re.compile(r"\bapt(?:-get)?\s+update\b", re.IGNORECASE)),
         ("curl", re.compile(r"\bcurl\b", re.IGNORECASE)),
         ("wget", re.compile(r"\bwget\b", re.IGNORECASE)),
         ("git-clone", re.compile(r"\bgit\s+clone\b", re.IGNORECASE)),
@@ -452,6 +453,9 @@ def scan_build_scripts(workspace: Path, repository: str,
         ("xorriso", re.compile(r"\bxorriso\b", re.IGNORECASE)),
         ("nasm", re.compile(r"\bnasm\b", re.IGNORECASE)),
         ("qemu-img", re.compile(r"\bqemu-img\b", re.IGNORECASE)),
+        ("qemu-system", re.compile(r"\bqemu-system-[a-z0-9_-]+\b", re.IGNORECASE)),
+        ("readelf", re.compile(r"\breadelf\b", re.IGNORECASE)),
+        ("dpkg-query", re.compile(r"\bdpkg-query\b", re.IGNORECASE)),
         ("mtools", re.compile(r"\b(?:mformat|mcopy|mmd)\b", re.IGNORECASE)),
         ("grub-mkrescue", re.compile(r"\bgrub-mkrescue\b", re.IGNORECASE)),
         ("objcopy", re.compile(r"\bobjcopy\b", re.IGNORECASE)),
