@@ -27,9 +27,15 @@ The scanner never creates legal approval. Decision records and no-manifest cover
 
 ## Current integration boundary
 
-Wicofe-Build now provides `.github/workflows/release-dependency-license-gate.yml`, a reusable/tag-triggered gate pinned to an immutable Wicofe-Tools commit. It calls the strict cross-repository workflow. However, Wicofe-Build still has no complete end-to-end build/release pipeline, and final-image publication is not yet wired to this gate. A successful individual repository informational workflow must not be treated as release authorization.
+Wicofe-Build provides `.github/workflows/release-dependency-license-gate.yml`, pinned to Wicofe-Tools workflow/source revision `cccc4c197687ce8fd629f9b9d8a7d95d4e89cddc`. Wicofe-Kernel and WDE also pin this auditor revision for their package-license CI evidence.
 
-Before release integration, Wicofe-Build must consume the strict cross-repository audit result and fail if it is unsuccessful. Wicofe-Image must also provide a final image/SBOM inventory that is reconciled against the audited dependency and asset set.
+Latest verified evidence: the Wicofe-Tools local auditor/unit-test workflow [43880910185](https://github.com/Waizusora/Wicofe-Tools/actions/runs/43880910185) passed. The strict 29-repository audit [43880910251](https://github.com/Waizusora/Wicofe-Tools/actions/runs/43880910251) failed closed, as required while prohibited and unapproved records remain.
+
+Important integration gap: Wicofe-Kernel and WDE produce separate CI package-delta artifacts. The latest Kernel artifact contains 103 package records (15 REJECTED, 84 NEEDS_REVIEW, four UNKNOWN); the latest WDE artifact contains 32 package records (19 NEEDS_REVIEW, 13 UNKNOWN). The cross-repository workflow does not yet ingest or reconcile these per-repository CI artifacts. They must be incorporated into the release evidence set and reconciled with final image contents; they are not part of the 347 source/build records in the cross-repository artifact.
+
+Wicofe-Build still has no complete end-to-end build/release pipeline, and final-image publication is not yet wired to a successful strict audit plus package-artifact reconciliation. A successful individual repository workflow must not be treated as release authorization.
+
+Before release integration, Wicofe-Build must consume the strict cross-repository audit result and fail if it is unsuccessful, then require the per-repository system-package evidence and Wicofe-Image final image/SBOM inventory to be reconciled against the audited dependency and asset set.
 
 ## Required release evidence
 
