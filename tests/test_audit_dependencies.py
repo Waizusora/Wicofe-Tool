@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from audit_dependencies import (classify_license, cargo_records, load_decisions,
-                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence)
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence, scan_build_scripts)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -41,10 +41,11 @@ class LicenseAuditTests(unittest.TestCase):
                 {"id": "b 2.0.0 (registry)", "deps": []}
             ]}
         }
-        rows = cargo_records(metadata, "fixture", {})
+        rows = cargo_records(metadata, "fixture", {}, "all-features-x86_64")
         self.assertEqual(["a", "b"], [r["name"] for r in rows])
         self.assertEqual(["direct", "transitive"], [r["dependency_type"] for r in rows])
         self.assertEqual(["tls"], rows[0]["enabled_features"])
+        self.assertEqual(["all-features-x86_64"], rows[0]["resolution_contexts"])
         self.assertTrue(all(r["status"] == "NEEDS_REVIEW" for r in rows))
 
     def test_human_approval_registry_requires_evidence(self):
@@ -75,11 +76,11 @@ class LicenseAuditTests(unittest.TestCase):
         rows = [
             {"package_id": "pkg 1.0.0", "name": "pkg", "version": "1.0.0",
              "dependency_type": "transitive", "enabled_features": ["tls"],
-             "dependency_kinds": ["normal"], "targets": [["lib"]], "license": "MIT",
+             "dependency_kinds": ["normal"], "resolution_contexts": ["default"], "targets": [["lib"]], "license": "MIT",
              "license_evidence": []},
             {"package_id": "pkg 1.0.0", "name": "pkg", "version": "1.0.0",
              "dependency_type": "direct", "enabled_features": ["std"],
-             "dependency_kinds": ["build"], "targets": [["bin"]], "license": "MIT",
+             "dependency_kinds": ["build"], "resolution_contexts": ["all-features"], "targets": [["bin"]], "license": "MIT",
              "license_evidence": []},
         ]
         merged = merge_cargo_records(rows)
@@ -87,6 +88,7 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("direct", merged[0]["dependency_type"])
         self.assertEqual(["std", "tls"], merged[0]["enabled_features"])
         self.assertEqual(["build", "normal"], merged[0]["dependency_kinds"])
+        self.assertEqual(["all-features", "default"], merged[0]["resolution_contexts"])
 
     def test_asset_and_submodule_inventory_is_not_approved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -161,6 +163,20 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual(commit, row["source_commit"])
             self.assertFalse(row["ref_is_immutable"])
             self.assertEqual("NEEDS_REVIEW", row["status"])
+
+    def test_build_scripts_surface_downloads_and_container_images(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "build.sh").write_text(
+                "# curl is mentioned in a comment\ncurl -fsSL https://example.invalid/tool | sh\n",
+                encoding="utf-8")
+            (root / "Dockerfile").write_text("FROM debian:stable-slim\n", encoding="utf-8")
+            scripts, dependencies = scan_build_scripts(root, "fixture")
+            self.assertEqual(2, len(scripts))
+            self.assertEqual(1, len(scripts[0]["external_command_matches"]))
+            self.assertEqual({"build-script-command", "container-image"},
+                             {item["ecosystem"] for item in dependencies})
+            self.assertTrue(all(item["status"] == "UNKNOWN" for item in dependencies))
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
