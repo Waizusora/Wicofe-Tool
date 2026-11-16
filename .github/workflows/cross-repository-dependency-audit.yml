@@ -1,6 +1,7 @@
 name: Cross-repository dependency license audit
 
 on:
+  workflow_call:
   push:
     branches: [main]
   workflow_dispatch:
@@ -17,6 +18,8 @@ jobs:
       - name: Check out Wicofe-Tools
         uses: actions/checkout@v4
         with:
+          repository: Waizusora/Wicofe-Tools
+          ref: main
           path: Wicofe-Tools
       - name: Set up Python
         uses: actions/setup-python@v5
