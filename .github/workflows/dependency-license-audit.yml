@@ -29,6 +29,7 @@ jobs:
         run: |
           set -- --workspace . --repository Wicofe-Tools \
             --decisions config/dependency_license_decisions.example.json \
+            --evidence config/upstream_license_evidence.json \
             --json reports/dependency-audit.json \
             --markdown reports/DEPENDENCY_LICENSE_AUDIT.md
           if [ -f reports/cargo-metadata.json ]; then
