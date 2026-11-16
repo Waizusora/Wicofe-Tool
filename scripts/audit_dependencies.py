@@ -64,8 +64,8 @@ def split_top_level_or(expression: str) -> list[str]:
     branches = []
     depth = 0
     start = 0
-    for match in re.finditer(r"\(|\)|\bOR\b", expression, re.IGNORECASE):
-        token = match.group(0).upper()
+    for match in re.finditer(r"\(|\)|\s+\bOR\b\s+", expression, re.IGNORECASE):
+        token = match.group(0).strip().upper()
         if token == "(":
             depth += 1
         elif token == ")":
