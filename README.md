@@ -49,3 +49,19 @@ This is a baseline check only. It does not validate SPDX expressions, transitive
 ## Documentation
 
 See [docs/INDEX.md](docs/INDEX.md) for this repository's technical documentation. The [central repository documentation map](https://github.com/Waizusora/Wicofe-Docs/blob/main/REPOSITORY_DOCUMENTATION_MAP.md) identifies canonical ownership and cross-repository boundaries.
+
+## Repository documentation validation
+
+- [Documentation validator](scripts/validate_repository_docs.py) checks local Markdown links, heading fragments, workspace path escapes, and optional forbidden terms.
+- [Validator guide](docs/REPOSITORY_DOCUMENTATION_VALIDATOR.md) documents workspace layout, command usage, exit codes, and limitations.
+- [Unit tests](tests/test_validate_repository_docs.py) cover valid links, missing targets, missing anchors, forbidden terms, and workspace escapes.
+- [GitHub Actions workflow](.github/workflows/repository-docs-validator.yml) runs the unit tests on relevant pushes and pull requests.
+
+Example:
+
+```sh
+python3 scripts/validate_repository_docs.py ../workspace --forbid-term MYPK
+python3 -m unittest discover -s tests -v
+```
+
+The validator is read-only. It checks local links only; it does not verify remote HTTP links, license compatibility, dependency trees, or repository implementation status.
