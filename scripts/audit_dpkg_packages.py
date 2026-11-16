@@ -71,6 +71,12 @@ def copyright_metadata(root: Path, package: dict[str, str]) -> dict[str, Any]:
         category, status = "UNKNOWN", "UNKNOWN"
     elif any(category.startswith("PROHIBITED") for category in categories):
         category, status = "MIXED_REVIEW", "NEEDS_REVIEW"
+    elif any(category in {"GPL_OPTIONAL_ALTERNATIVE", "AGPL_OPTIONAL_ALTERNATIVE",
+                          "LGPL_OPTIONAL_ALTERNATIVE"} for category in primary_categories):
+        category = next(category for category in primary_categories
+                        if category in {"GPL_OPTIONAL_ALTERNATIVE", "AGPL_OPTIONAL_ALTERNATIVE",
+                                        "LGPL_OPTIONAL_ALTERNATIVE"})
+        status = "NEEDS_REVIEW"
     elif any(category.startswith("LGPL") for category in primary_categories):
         category, status = "LGPL", "NEEDS_REVIEW"
     else:
