@@ -54,6 +54,7 @@ MANIFEST_NAMES = {
     "CMakePresets.json": "cmake-presets",
     "Makefile": "make",
     ".gitmodules": "git-submodule",
+    "rust-toolchain.toml": "rust-toolchain",
 }
 
 
@@ -368,6 +369,49 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     return found
 
 
+def scan_rust_toolchain(workspace: Path, repository: str,
+                        decisions: dict[str, dict[str, Any]],
+                        upstream_evidence: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    path = workspace / "rust-toolchain.toml"
+    if not path.is_file():
+        return []
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    toolchain = data.get("toolchain", {})
+    channel = str(toolchain.get("channel", "UNKNOWN"))
+    key = f"rust-toolchain:rustc:{channel}"
+    evidence_record = upstream_evidence.get(key, {})
+    decision = decisions.get(key)
+    license_expr = evidence_record.get("license")
+    category = classify_license(license_expr)
+    if category.startswith("PROHIBITED"):
+        status = "REJECTED"
+    elif category == "UNKNOWN":
+        status = "UNKNOWN"
+    elif decision:
+        status = "PASS"
+    else:
+        status = "NEEDS_REVIEW"
+    license_evidence = [{"kind": "rust-toolchain-config", "path": "rust-toolchain.toml",
+                         "channel": channel, "targets": toolchain.get("targets", []),
+                         "components": toolchain.get("components", [])}]
+    license_evidence.extend(evidence_record.get("license_evidence", []))
+    return [{
+        "repository": repository, "ecosystem": "rust-toolchain", "name": "rustc",
+        "version": channel, "package_id": key,
+        "source": evidence_record.get("upstream_url"),
+        "source_commit": evidence_record.get("source_commit"),
+        "upstream_url": evidence_record.get("upstream_url"),
+        "license": license_expr, "license_category": category,
+        "license_evidence": license_evidence,
+        "dependency_type": "build-time", "enabled_features": [],
+        "targets": toolchain.get("targets", []),
+        "components": toolchain.get("components", []),
+        "status": status, "distribution": "build toolchain; not established in final image",
+        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+        "decision": decision,
+    }]
+
+
 def scan_build_scripts(workspace: Path, repository: str,
                        decisions: dict[str, dict[str, Any]],
                        upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -418,8 +462,10 @@ def scan_build_scripts(workspace: Path, repository: str,
     for path in sorted(workspace.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
             continue
+        is_workflow = (".github" in path.parts and "workflows" in path.parts
+                       and path.suffix.lower() in {".yml", ".yaml"})
         if (path.name not in script_names and not path.name.startswith("Dockerfile.")
-                and path.suffix.lower() not in script_extensions):
+                and path.suffix.lower() not in script_extensions and not is_workflow):
             continue
         try:
             raw = path.read_bytes()
@@ -431,9 +477,58 @@ def scan_build_scripts(workspace: Path, repository: str,
         for line_number, line in enumerate(content.splitlines(), start=1):
             if line.lstrip().startswith("#"):
                 continue
+            runner_match = re.match(r"^\s*runs-on:\s*(.+)$", line)
+            if runner_match:
+                runner = runner_match.group(1).strip().strip("'\"")
+                dependencies.append({
+                    "repository": repository, "ecosystem": "github-runner-image",
+                    "name": runner, "version": runner if "latest" not in runner else "UNPINNED",
+                    "package_id": f"github-runner-image:{runner}",
+                    "license": None, "license_category": "UNKNOWN",
+                    "license_evidence": [{"kind": "workflow_runs_on", "path": rel, "line": line_number}],
+                    "dependency_type": "build-time", "enabled_features": [],
+                    "status": "UNKNOWN", "distribution": "hosted build environment; not in final image",
+                    "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                })
+        logical_lines = []
+        pending = ""
+        pending_line = 1
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if not pending:
+                pending_line = line_number
+            pending = (pending + " " + stripped.rstrip("\\")).strip()
+            if stripped.endswith("\\"):
+                continue
+            if pending:
+                logical_lines.append((pending_line, pending))
+            pending = ""
+        if pending:
+            logical_lines.append((pending_line, pending))
+        for line_number, line in logical_lines:
+            if line.startswith("#"):
+                continue
             for label, pattern in external_patterns + tool_patterns:
                 if pattern.search(line):
                     matches.append({"command": label, "line": line_number, "text": line.strip()[:300]})
+            apt_match = re.search(r"\bapt(?:-get)?\s+install\b(.*)", line)
+            if apt_match:
+                for token in shlex.split(apt_match.group(1)):
+                    if token.startswith("-"):
+                        continue
+                    package, separator, version = token.partition("=")
+                    if not package:
+                        continue
+                    package_id = f"system-package:{package}:{version if separator else 'UNPINNED'}"
+                    dependencies.append({
+                        "repository": repository, "ecosystem": "system-package",
+                        "name": package, "version": version if separator else "UNPINNED",
+                        "package_id": package_id, "license": None, "license_category": "UNKNOWN",
+                        "license_evidence": [{"kind": "apt_install", "path": rel, "line": line_number}],
+                        "dependency_type": "build-time", "enabled_features": [],
+                        "status": "UNKNOWN", "distribution": "build environment package; not in final image",
+                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                    })
         scripts.append({"repository": repository, "path": rel, "size_bytes": len(raw),
                         "sha256": hashlib.sha256(raw).hexdigest(),
                         "external_command_matches": matches,
@@ -800,6 +895,7 @@ def main(argv: list[str] | None = None) -> int:
             dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
         dependencies.extend(build_dependencies)
+        dependencies.extend(scan_rust_toolchain(workspace, repository, decisions, upstream_evidence))
         dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
         dependencies = merge_cargo_records(dependencies)
         # Without cargo metadata, preserve lockfile inventory but never infer licenses.
@@ -812,7 +908,7 @@ def main(argv: list[str] | None = None) -> int:
         for item in dependencies:
             statuses[item["status"]] = statuses.get(item["status"], 0) + 1
         cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
-        unresolved = [m for m in manifests if m["ecosystem"] not in {"cargo", "cargo-lock"}]
+        unresolved = [m for m in manifests if m["ecosystem"] not in {"cargo", "cargo-lock", "rust-toolchain"}]
         if len(metadata_paths) < cargo_manifest_count:
             unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
         if not manifests:
