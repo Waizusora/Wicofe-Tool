@@ -51,9 +51,13 @@ jobs:
               --decisions Wicofe-Tools/config/dependency_license_decisions.example.json
               --strict --json "reports/dependencies/$repo.json"
               --markdown "reports/dependencies/$repo.md")
-            mapfile -d '' manifests < <(find "$root" -type f -name Cargo.toml
-              -not -path '*/.git/*' -not -path '*/target/*'
-              -not -path '*/node_modules/*' -not -path '*/.venv/*' -print0 | sort -z)
+            mapfile -d '' manifests < <(
+              find "$root" -type f -name Cargo.toml \
+                -not -path '*/.git/*' \
+                -not -path '*/target/*' \
+                -not -path '*/node_modules/*' \
+                -not -path '*/.venv/*' -print0 | sort -z
+            )
             index=0
             for manifest in "${manifests[@]}"; do
               index=$((index + 1))
