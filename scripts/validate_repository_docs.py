@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-LINK_RE = re.compile(r"!?\\[[^\\]]*\\]\\((<[^>]+>|[^)]+)\\)")
-HEADING_RE = re.compile(r"^ {0,3}(#{1,6})\\s+(.+?)\\s*#*\\s*$")
+LINK_RE = re.compile(r"!?\[[^\]]*\]\((<[^>]+>|[^)]+)\)")
+HEADING_RE = re.compile(r"^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-INLINE_CODE_RE = re.compile(r"\\x60[^\\x60]*\\x60")
-FENCE_RE = re.compile(r"^\\s{0,3}(\\x60{3,}|~{3,})")
+INLINE_CODE_RE = re.compile(r"\x60[^\x60]*\x60")
+FENCE_RE = re.compile(r"^\s{0,3}(\x60{3,}|~{3,})")
 AUTOLINK_RE = re.compile(r"<((?:https?://|mailto:)[^>]+)>", re.IGNORECASE)
 
 
@@ -29,11 +29,11 @@ class Finding:
 
 
 def heading_slug(text: str) -> str:
-    text = re.sub(r"\\[([^\\]]+)\\]\\([^)]*\\)", r"\\1", text)
-    text = re.sub(r"\\x60([^\\x60]+)\\x60", r"\\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\x60([^\x60]+)\x60", r"\1", text)
     text = re.sub(r"<[^>]+>", "", text).strip().lower()
-    text = re.sub(r"[^\\w\\- ]", "", text, flags=re.UNICODE)
-    text = re.sub(r"\\s", "-", text)
+    text = re.sub(r"[^\w\- ]", "", text, flags=re.UNICODE)
+    text = re.sub(r"\s", "-", text)
     return re.sub(r"-+", "-", text)
 
 
@@ -71,8 +71,8 @@ def clean_link_target(raw: str) -> str:
     target = raw.strip()
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1]
-    elif re.search(r"""\\s+["']""", target):
-        target = re.split(r"""\\s+(?=["'])""", target, maxsplit=1)[0]
+    elif re.search(r"""\s+["']""", target):
+        target = re.split(r"""\s+(?=["'])""", target, maxsplit=1)[0]
     return unquote(target)
 
 
