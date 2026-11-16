@@ -17,7 +17,7 @@ Tools must not silently modify source repositories, overwrite user data, or perf
 - Document supported platforms, inputs, outputs, and failure modes.
 - Prefer reproducible and deterministic behavior.
 - Validate external input and report actionable errors.
-- Keep dependencies minimal and enforce the [Wicofe dependency license policy](https://github.com/Waizusora/Wicofe-ThirdParty/blob/main/policies/DEPENDENCY_LICENSE_POLICY_0.1.md).
+- Keep dependencies minimal and enforce the [Wicofe dependency license policy](https://github.com/Waizusora/Wicofe-ThirdParty/blob/main/policies/DEPENDENCY_LICENSE_POLICY_0.2.md).
 - Add automated tests for non-trivial behavior.
 
 ## License
