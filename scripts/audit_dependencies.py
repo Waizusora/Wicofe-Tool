@@ -57,43 +57,58 @@ MANIFEST_NAMES = {
 }
 
 
+def split_top_level_or(expression: str) -> list[str]:
+    """Split an SPDX expression only at top-level OR operators."""
+    branches = []
+    depth = 0
+    start = 0
+    for match in re.finditer(r"\(|\)|\bOR\b", expression, re.IGNORECASE):
+        token = match.group(0).upper()
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth = max(0, depth - 1)
+        elif token == "OR" and depth == 0:
+            branches.append(expression[start:match.start()].strip())
+            start = match.end()
+    branches.append(expression[start:].strip())
+    return [branch for branch in branches if branch]
+
+
+def is_permissive_license_branch(branch: str) -> bool:
+    value = branch.upper()
+    if any(token in value for token in ("GPL", "AGPL", "LGPL", "MPL", "EPL", "CDDL",
+                                        "OSL", "EUPL", "SSPL", "PROPRIETARY", "UNLICENSED")):
+        return False
+    return bool(re.search(
+        r"\b(?:MIT|APACHE-2\.0|BSD-[23]-CLAUSE|ISC|ZLIB|UNLICENSE|CC0-1\.0|0BSD|BSL-1\.0)\b",
+        value,
+    ))
+
+
+def license_alternatives(expression: str | None) -> list[str]:
+    if not expression:
+        return []
+    return [branch for branch in split_top_level_or(expression)
+            if is_permissive_license_branch(branch)]
+
+
 def classify_license(expression: str | None) -> str:
-    """Conservative policy classification; this is not an SPDX legal parser."""
+    """Conservative SPDX identifier trigger classification; not a legal parser."""
     if not expression or not expression.strip():
         return "UNKNOWN"
     value = expression.upper()
-    # AGPL must be checked before GPL because its identifier contains GPL.
-    if re.search(r"\bAGPL(?:-|\s)", value) or "AGPL" in value:
+    if re.search(r"\bAGPL(?:-|\\s)", value) or "AGPL" in value:
         return "PROHIBITED_AGPL"
-    if re.search(r"\bGPL(?:-|\s)", value) or re.search(r"\bGPL\b", value):
+    if re.search(r"\bGPL(?:-|\\s)", value) or re.search(r"\bGPL\b", value):
         return "PROHIBITED_GPL"
     if "LGPL" in value:
-        if re.search(r"\bOR\b", value) and re.search(r"\b(?:MIT|Apache-2\.0|BSD-[0-9]-Clause|ISC|Zlib)\b", value):
-            return "LGPL_OPTIONAL_ALTERNATIVE"
-        return "LGPL"
+        return "LGPL_OPTIONAL_ALTERNATIVE" if license_alternatives(expression) else "LGPL"
     if any(token in value for token in ("MPL", "EPL", "CDDL", "OSL", "EUPL", "SSPL")):
         return "COPYLEFT_REVIEW"
     if any(token in value for token in ("UNLICENSED", "PROPRIETARY", "CUSTOM", "SEE LICENSE")):
         return "RESTRICTED_REVIEW"
     return "OTHER_REVIEW"
-
-
-def load_decisions(path: Path | None) -> dict[str, dict[str, Any]]:
-    if path is None:
-        return {}
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("policy_version") != POLICY_VERSION:
-        raise ValueError(f"decision registry must declare policy_version {POLICY_VERSION}")
-    decisions = data.get("decisions", {})
-    if not isinstance(decisions, dict):
-        raise ValueError("decisions must be a JSON object")
-    for key, decision in decisions.items():
-        required = ("status", "reviewer", "approved_by", "evidence", "scope", "conditions")
-        if not isinstance(decision, dict) or any(not decision.get(k) for k in required):
-            raise ValueError(f"decision {key!r} lacks required human-review fields: {required}")
-        if decision["status"] != "approved":
-            raise ValueError(f"decision {key!r} must use status 'approved' or be omitted")
-    return decisions
 
 
 def load_upstream_evidence(path: Path | None) -> dict[str, dict[str, Any]]:
@@ -240,6 +255,7 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
         key = package_key(name, version)
         decision = decisions.get(key)
         category = classify_license(license_expr)
+        safe_alternatives = license_alternatives(license_expr)
         if category.startswith("PROHIBITED"):
             status = "REJECTED"
         elif category == "UNKNOWN":
@@ -248,10 +264,8 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             status = "APPROVED_WITH_CONDITIONS" if decision and decision.get("conditions_verified") else "NEEDS_REVIEW"
         elif category == "LGPL_OPTIONAL_ALTERNATIVE":
             selected = decision.get("selected_license") if decision else None
-            if decision and selected and selected.upper() in license_expr.upper():
-                status = "PASS"
-            else:
-                status = "NEEDS_REVIEW"
+            normalized = {branch.upper() for branch in safe_alternatives}
+            status = "PASS" if decision and selected and selected.upper() in normalized else "NEEDS_REVIEW"
         elif decision:
             status = "PASS"
         else:
@@ -270,7 +284,8 @@ def cargo_records(metadata: dict[str, Any], repository: str, decisions: dict[str
             "repository": repository, "ecosystem": "cargo", "name": name, "version": version,
             "package_id": pkg_id, "source": source, "source_commit": source_commit,
             "checksum": checksum, "upstream_url": pkg.get("repository"), "license": license_expr,
-            "license_category": category, "license_evidence": evidence,
+            "license_category": category, "license_alternatives": safe_alternatives,
+            "license_evidence": evidence,
             "dependency_type": "direct" if pkg_id in direct_ids else "transitive",
             "required_by": incoming_edges, "enabled_features": enabled_features,
             "dependency_kinds": dependency_kinds,
@@ -296,7 +311,8 @@ def merge_cargo_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             grouped[key] = record
             continue
         current = grouped[key]
-        for field in ("enabled_features", "dependency_kinds", "resolution_contexts", "targets"):
+        for field in ("enabled_features", "dependency_kinds", "outgoing_dependency_kinds",
+                      "resolution_contexts", "targets", "required_by"):
             current[field] = sorted({json.dumps(v, sort_keys=True) for v in current.get(field, [])}
                                     | {json.dumps(v, sort_keys=True) for v in record.get(field, [])})
             current[field] = [json.loads(v) for v in current[field]]
