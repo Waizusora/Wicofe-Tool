@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from audit_dependencies import (classify_license, cargo_records, load_decisions,
-                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests)
+                                lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage)
 
 
 class LicenseAuditTests(unittest.TestCase):
@@ -115,6 +115,21 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "settings.gradle.kts").write_text("", encoding="utf-8")
             found = scan_manifests(root, "fixture")
             self.assertEqual({"python", "gradle"}, {item["ecosystem"] for item in found})
+
+    def test_no_manifest_coverage_requires_human_attestation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "coverage.json"
+            record = {"status": "reviewed_no_dependencies", "reviewer": "reviewer",
+                      "approved_by": "owner", "evidence": "build inputs reviewed",
+                      "scope": "repository main branch", "conditions": "re-review on build changes"}
+            p.write_text(json.dumps({"policy_version": "0.2.0",
+                                     "repositories": {"Wicofe-Docs": record}}), encoding="utf-8")
+            self.assertIn("Wicofe-Docs", load_coverage(p))
+            record.pop("evidence")
+            p.write_text(json.dumps({"policy_version": "0.2.0",
+                                     "repositories": {"Wicofe-Docs": record}}), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_coverage(p)
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
