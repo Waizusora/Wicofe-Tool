@@ -227,6 +227,19 @@
           "blob_sha": "31aa79387f27e730e33d871925e152e35e428031"
         }
       ]
+    },
+    "github-actions:Waizusora/Wicofe-Tools/.github/workflows/cross-repository-dependency-audit.yml:ad1175c000c765834045a0035fae3cb0b4a49374": {
+      "name": "Waizusora/Wicofe-Tools/.github/workflows/cross-repository-dependency-audit.yml",
+      "ref": "ad1175c000c765834045a0035fae3cb0b4a49374",
+      "source_commit": "ad1175c000c765834045a0035fae3cb0b4a49374",
+      "license": "MPL-2.0",
+      "upstream_url": "https://github.com/Waizusora/Wicofe-Tools",
+      "license_evidence": [
+        {
+          "url": "https://github.com/Waizusora/Wicofe-Tools/blob/ad1175c000c765834045a0035fae3cb0b4a49374/LICENSE",
+          "blob_sha": "ee6256cdb62a765749a71aae3abea32884301cd1"
+        }
+      ]
     }
   }
 }
