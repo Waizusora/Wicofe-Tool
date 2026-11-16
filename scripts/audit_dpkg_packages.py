@@ -30,40 +30,60 @@ def copyright_metadata(root: Path, package: dict[str, str]) -> dict[str, Any]:
     path = root / "usr/share/doc" / package["name"] / "copyright"
     if not path.is_file():
         return {
-            **package, "license_expressions": [], "license_category": "UNKNOWN",
-            "status": "UNKNOWN", "source": None, "license_evidence": [],
+            **package, "license_expressions": [], "primary_license_expressions": [],
+            "license_category": "UNKNOWN", "status": "UNKNOWN", "source": None,
+            "license_evidence": [],
         }
     raw = path.read_bytes()
     text = raw.decode("utf-8", errors="replace")
     source = None
     upstream_name = None
-    licenses = []
+    stanzas: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
     for line in text.splitlines():
         if line.startswith("Source:"):
             source = line.partition(":")[2].strip()
         elif line.startswith("Upstream-Name:"):
             upstream_name = line.partition(":")[2].strip()
-        elif line.startswith("License:"):
-            value = line.partition(":")[2].strip()
-            if value and value not in licenses:
-                licenses.append(value)
+        elif line.startswith("Files:"):
+            if current:
+                stanzas.append(current)
+            current = {"files": line.partition(":")[2].strip()}
+        elif current and line.startswith("License:"):
+            current["license"] = line.partition(":")[2].strip()
+        elif not line.strip() and current:
+            stanzas.append(current)
+            current = None
+    if current:
+        stanzas.append(current)
+
+    licenses = sorted({item["license"] for item in stanzas if item.get("license")})
+    default_stanzas = [item for item in stanzas if item.get("files") == "*"]
+    primary_licenses = sorted({item["license"] for item in default_stanzas if item.get("license")})
     categories = [classify_license(value) for value in licenses]
-    if any(category.startswith("PROHIBITED") for category in categories):
-        category, status = next((category, "REJECTED") for category in categories
-                                if category.startswith("PROHIBITED"))
-    elif not licenses or any(category == "UNKNOWN" for category in categories):
+    primary_categories = [classify_license(value) for value in primary_licenses]
+    if any(category.startswith("PROHIBITED") for category in primary_categories):
+        category, status = "PROHIBITED_GPL", "REJECTED"
+    elif not primary_licenses:
+        category, status = ("UNKNOWN", "UNKNOWN") if not licenses else ("MIXED_REVIEW", "NEEDS_REVIEW")
+    elif any(category == "UNKNOWN" for category in primary_categories):
         category, status = "UNKNOWN", "UNKNOWN"
-    elif "LGPL" in categories or "LGPL_OPTIONAL_ALTERNATIVE" in categories:
+    elif any(category.startswith("PROHIBITED") for category in categories):
+        category, status = "MIXED_REVIEW", "NEEDS_REVIEW"
+    elif any(category.startswith("LGPL") for category in primary_categories):
         category, status = "LGPL", "NEEDS_REVIEW"
     else:
         category, status = "OTHER_REVIEW", "NEEDS_REVIEW"
     return {
         **package, "upstream_name": upstream_name, "source": source,
-        "license_expressions": licenses, "license_category": category, "status": status,
+        "license_expressions": licenses, "primary_license_expressions": primary_licenses,
+        "license_category": category, "status": status,
         "license_evidence": [{
             "kind": "debian_copyright", "path": str(path),
             "sha256": hashlib.sha256(raw).hexdigest(),
-            "license_declarations": licenses,
+            "primary_license_declarations": primary_licenses,
+            "all_license_declarations": licenses,
+            "note": "A GPL declaration outside the Files: * default stanza is NEEDS_REVIEW until mapped to the installed binary payload.",
         }],
     }
 
