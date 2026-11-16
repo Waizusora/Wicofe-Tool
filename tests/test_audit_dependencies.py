@@ -356,5 +356,33 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertIsNone(rows[0]["license"])
 
 
+    def test_gpl_or_permissive_alternative_requires_explicit_selection(self):
+        expression = "GPL-2+ or BSD-2-clause"
+        self.assertEqual("GPL_OPTIONAL_ALTERNATIVE", classify_license(expression))
+        self.assertEqual("NEEDS_REVIEW", __import__("audit_dependencies").license_decision_status(expression, None))
+        base = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                "evidence": "package copyright reviewed", "scope": "Wicofe CI host",
+                "conditions": "use BSD branch only", "selected_license": "BSD-2-clause"}
+        self.assertEqual("PASS", __import__("audit_dependencies").license_decision_status(expression, base))
+        rejected = dict(base, status="rejected")
+        self.assertEqual("REJECTED", __import__("audit_dependencies").license_decision_status(expression, rejected))
+
+    def test_gpl_or_lgpl_alternative_requires_lgpl_conditions(self):
+        expression = "GPL-2+ or LGPL-2.1+"
+        self.assertEqual("GPL_OPTIONAL_ALTERNATIVE", classify_license(expression))
+        decision = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                    "evidence": "Debian copyright reviewed", "scope": "Wicofe build host",
+                    "conditions": "provide LGPL source and notices",
+                    "selected_license": "LGPL-2.1+"}
+        status_fn = __import__("audit_dependencies").license_decision_status
+        self.assertEqual("NEEDS_REVIEW", status_fn(expression, decision))
+        decision["conditions_verified"] = True
+        self.assertEqual("APPROVED_WITH_CONDITIONS", status_fn(expression, decision))
+
+    def test_gpl_and_permissive_license_remains_prohibited(self):
+        self.assertEqual("PROHIBITED_GPL", classify_license("GPL-2+ AND MIT"))
+        self.assertEqual("PROHIBITED_GPL", classify_license("GPL-2+"))
+        self.assertEqual("AGPL_OPTIONAL_ALTERNATIVE", classify_license("AGPL-3.0-only OR MIT"))
+
 if __name__ == "__main__":
     unittest.main()
