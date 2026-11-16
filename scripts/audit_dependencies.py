@@ -262,7 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    unresolved = [m for m in manifests if m["ecosystem"] != "cargo" and m["ecosystem"] != "cargo-lock"]
+    unresolved = [m for m in manifests
+                  if m["ecosystem"] != "cargo-lock"
+                  and (m["ecosystem"] != "cargo" or not metadata_paths)]
     blocked = any(d["status"] not in {"PASS", "APPROVED_WITH_CONDITIONS"} for d in dependencies)
     if any(d["status"] == "REJECTED" for d in dependencies):
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
