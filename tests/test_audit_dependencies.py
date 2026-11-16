@@ -259,6 +259,7 @@ class LicenseAuditTests(unittest.TestCase):
                 'curl -L "$ARCHIVE_URL"\n'
                 'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
                 'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n'
+                'cp "$LIMINE_DIR/LICENSE" "$NOTICE_DEST/LICENSE"\n'
             )
             (root / "build.sh").write_text(script, encoding="utf-8")
             evidence = {"downloaded-artifact:Limine:12.9.6": {
@@ -275,6 +276,7 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual("b" * 40, item["source_commit"])
             self.assertTrue(item["checksum_verified_against_release_metadata"])
             self.assertIn("3RDPARTY.md", item["distribution"])
+            self.assertIn("archive LICENSE", item["distribution"])
             self.assertEqual("NEEDS_REVIEW", item["status"])
 
     def test_workflow_runner_and_apt_packages_are_inventoried(self):
