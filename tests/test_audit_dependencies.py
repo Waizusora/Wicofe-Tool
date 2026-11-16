@@ -55,6 +55,21 @@ class LicenseAuditTests(unittest.TestCase):
                 "scope": "repo/target/release", "conditions": "retain notices"}}}))
             self.assertIn("cargo:lib:1.0.0", load_decisions(p))
 
+    def test_lgpl_requires_verified_conditions(self):
+        metadata = {
+            "packages": [{"id": "lib 1.0.0 (registry)", "name": "lib", "version": "1.0.0", "license": "LGPL-2.1-only"}],
+            "workspace_members": ["root"],
+            "resolve": {"nodes": [{"id": "root", "deps": [{"pkg": "lib 1.0.0 (registry)"}]},
+                                  {"id": "lib 1.0.0 (registry)", "deps": []}]}
+        }
+        base = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                "evidence": "license text reviewed", "scope": "target/release", "conditions": "relinking"}
+        self.assertEqual("NEEDS_REVIEW", cargo_records(metadata, "fixture",
+                         {"cargo:lib:1.0.0": base})[0]["status"])
+        verified = dict(base, conditions_verified=True)
+        self.assertEqual("APPROVED_WITH_CONDITIONS", cargo_records(metadata, "fixture",
+                         {"cargo:lib:1.0.0": verified})[0]["status"])
+
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "Cargo.lock"
