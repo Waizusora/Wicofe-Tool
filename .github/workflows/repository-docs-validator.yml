@@ -1,0 +1,30 @@
+name: Repository documentation validator tests
+
+on:
+  push:
+    paths:
+      - "scripts/validate_repository_docs.py"
+      - "tests/**"
+      - ".github/workflows/repository-docs-validator.yml"
+  pull_request:
+    paths:
+      - "scripts/validate_repository_docs.py"
+      - "tests/**"
+      - ".github/workflows/repository-docs-validator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run validator unit tests
+        run: python -m unittest discover -s tests -v
