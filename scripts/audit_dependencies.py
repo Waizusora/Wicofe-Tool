@@ -275,8 +275,8 @@ def scan_github_actions(workspace: Path, repository: str,
     action_files += list(workspace.glob(".github/actions/**/action.yaml"))
     for path in sorted(set(action_files)):
         content = path.read_text(encoding="utf-8", errors="replace")
-        for line_number, match in enumerate(content.splitlines(), start=1):
-            found = uses_pattern.match(line_number and content.splitlines()[line_number - 1])
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            found = uses_pattern.match(line)
             if not found:
                 continue
             value = found.group(1).strip("'\"")
