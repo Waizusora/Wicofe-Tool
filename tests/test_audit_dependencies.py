@@ -254,7 +254,7 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "build.sh").write_text(
                 'LIMINE_VERSION="12.9.6"\n'
                 f'LIMINE_ARCHIVE_SHA256="{checksum}"\n'
-                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v\${LIMINE_VERSION}/limine-binary.tar.xz"\n'
+                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v12.9.6/limine-binary.tar.xz"\n'
                 'curl -L "$ARCHIVE_URL"\n'
                 'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
                 'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n', encoding="utf-8")
