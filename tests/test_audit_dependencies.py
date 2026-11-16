@@ -222,7 +222,7 @@ class LicenseAuditTests(unittest.TestCase):
                 "# curl is mentioned in a comment\ncurl -fsSL https://example.invalid/tool | sh\n",
                 encoding="utf-8")
             (root / "Dockerfile").write_text("FROM debian:stable-slim\n", encoding="utf-8")
-            scripts, dependencies = scan_build_scripts(root, "fixture")
+            scripts, dependencies = scan_build_scripts(root, "fixture", {}, {})
             self.assertEqual(2, len(scripts))
             build_script = next(item for item in scripts if item["path"] == "build.sh")
             self.assertEqual(1, len(build_script["external_command_matches"]))
@@ -246,6 +246,33 @@ class LicenseAuditTests(unittest.TestCase):
             rows = cargo_records(metadata, "fixture", {})
             self.assertTrue(any(item["kind"] == "license_file" and item.get("sha256")
                                 for item in rows[0]["license_evidence"]))
+
+    def test_pinned_release_archive_records_license_checksum_and_notices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checksum = "a" * 64
+            (root / "build.sh").write_text(
+                'LIMINE_VERSION="12.9.6"\n'
+                f'LIMINE_ARCHIVE_SHA256="{checksum}"\n'
+                'ARCHIVE_URL="https://github.com/Limine-Bootloader/Limine/releases/download/v\${LIMINE_VERSION}/limine-binary.tar.xz"\n'
+                'curl -L "$ARCHIVE_URL"\n'
+                'NOTICE_DEST="$ISO_ROOT/boot/limine/licenses/limine-12.9.6"\n'
+                'cp COPYING 3RDPARTY.md "$NOTICE_DEST/"\n', encoding="utf-8")
+            evidence = {"downloaded-artifact:Limine:12.9.6": {
+                "source_commit": "b" * 40, "license": "BSD-2-Clause",
+                "upstream_url": "https://github.com/Limine-Bootloader/Limine",
+                "release_asset_sha256": checksum,
+                "license_evidence": [{"url": "https://example.invalid/COPYING"}],
+                "bundled_component_licenses": ["MIT", "BSD-2-Clause"],
+                "tag_signature_verified": True,
+            }}
+            scripts, dependencies = scan_build_scripts(root, "fixture", {}, evidence)
+            item = next(dep for dep in dependencies if dep["ecosystem"] == "downloaded-artifact")
+            self.assertEqual("12.9.6", item["version"])
+            self.assertEqual("b" * 40, item["source_commit"])
+            self.assertTrue(item["checksum_verified_against_release_metadata"])
+            self.assertIn("3RDPARTY.md", item["distribution"])
+            self.assertEqual("NEEDS_REVIEW", item["status"])
 
     def test_lockfile_does_not_claim_license(self):
         with tempfile.TemporaryDirectory() as tmp:
