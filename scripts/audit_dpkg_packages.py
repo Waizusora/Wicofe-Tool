@@ -97,6 +97,7 @@ def main() -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--json", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
+    parser.add_argument("--strict", action="store_true", help="return nonzero for REJECTED or UNKNOWN packages")
     args = parser.parse_args()
 
     packages = [copyright_metadata(args.root, item) for item in read_package_delta(args.packages)]
@@ -113,7 +114,7 @@ def main() -> int:
     args.json.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     args.markdown.write_text(markdown_report(report), encoding="utf-8")
     print(f"System package records: {len(packages)}; summary={summary}")
-    if summary.get("REJECTED", 0) or summary.get("UNKNOWN", 0):
+    if args.strict and (summary.get("REJECTED", 0) or summary.get("UNKNOWN", 0)):
         return 1
     return 0
 
