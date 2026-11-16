@@ -90,14 +90,14 @@ class LicenseAuditTests(unittest.TestCase):
                     {"id": "root", "name": "root", "version": "1.0.0",
                      "dependencies": [{"name": "lib", "req": "^1", "kind": None,
                                        "optional": True, "uses_default_features": False,
-                                       "features": ["serde"], "target": "cfg(target_arch = \\"aarch64\\")"}]},
+                                       "features": ["serde"], "target": "cfg(target_arch = \"aarch64\")"}]},
                     {"id": "lib 1.0.0 (registry)", "name": "lib", "version": "1.0.0",
                      "license": "MIT", "source": "registry+https://github.com/rust-lang/crates.io-index"}
                 ],
                 "workspace_members": ["root"],
                 "resolve": {"nodes": [
                     {"id": "root", "deps": [{"pkg": "lib 1.0.0 (registry)", "name": "lib",
-                                              "dep_kinds": [{"kind": None, "target": "cfg(target_arch = \\"aarch64\\")"}]}]},
+                                              "dep_kinds": [{"kind": None, "target": "cfg(target_arch = \"aarch64\")"}]}]},
                     {"id": "lib 1.0.0 (registry)", "features": [], "deps": []}
                 ]}
             }
