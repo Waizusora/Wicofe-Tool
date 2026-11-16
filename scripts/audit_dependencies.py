@@ -93,6 +93,24 @@ def load_decisions(path: Path | None) -> dict[str, dict[str, Any]]:
     return decisions
 
 
+def load_upstream_evidence(path: Path | None) -> dict[str, dict[str, Any]]:
+    """Load source/license evidence only; entries do not imply approval."""
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("policy_version") != POLICY_VERSION:
+        raise ValueError(f"upstream evidence must declare policy_version {POLICY_VERSION}")
+    records = data.get("dependencies", {})
+    if not isinstance(records, dict):
+        raise ValueError("upstream evidence dependencies must be a JSON object")
+    for key, record in records.items():
+        if not record.get("license") or not re.fullmatch(r"[0-9a-fA-F]{40}", record.get("source_commit", "")):
+            raise ValueError(f"upstream evidence {key!r} lacks license or immutable source commit")
+        if not record.get("upstream_url") or not record.get("license_evidence"):
+            raise ValueError(f"upstream evidence {key!r} lacks upstream URL or license evidence")
+    return records
+
+
 def load_coverage(path: Path | None) -> dict[str, dict[str, Any]]:
     """Load human-reviewed evidence for repositories with no dependency manifests."""
     if path is None:
@@ -265,10 +283,11 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
 
 
 def scan_github_actions(workspace: Path, repository: str,
-                       decisions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Inventory external actions used by workflows/composite actions as build-time deps."""
+                       decisions: dict[str, dict[str, Any]],
+                       upstream_evidence: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Inventory external actions as build-time dependencies; never auto-approve."""
     records = []
-    uses_pattern = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)", re.MULTILINE)
+    uses_pattern = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)")
     action_files = list(workspace.glob(".github/workflows/*.yml"))
     action_files += list(workspace.glob(".github/workflows/*.yaml"))
     action_files += list(workspace.glob(".github/actions/**/action.yml"))
@@ -280,7 +299,7 @@ def scan_github_actions(workspace: Path, repository: str,
             if not found:
                 continue
             value = found.group(1).strip("'\"")
-            if value.startswith("./"):
+            if value.startswith(("./", "../")):
                 continue
             if value.startswith("docker://"):
                 name, revision = value[len("docker://"):], "container-reference"
@@ -292,13 +311,17 @@ def scan_github_actions(workspace: Path, repository: str,
                     name, revision = value.rsplit("@", 1)
                 source = f"https://github.com/{name.split('/')[0]}/{name.split('/')[1]}" if "/" in name else None
             key = f"github-actions:{name}:{revision}"
+            evidence_record = upstream_evidence.get(key, {})
             decision = decisions.get(key)
-            license_expr = decision.get("license") if decision else None
+            license_expr = evidence_record.get("license")
             category = classify_license(license_expr)
+            immutable_ref = bool(re.fullmatch(r"[0-9a-fA-F]{40}", revision))
             if category.startswith("PROHIBITED"):
                 status = "REJECTED"
             elif category == "UNKNOWN":
                 status = "UNKNOWN"
+            elif not immutable_ref:
+                status = "NEEDS_REVIEW"
             elif decision:
                 if category == "LGPL" and not decision.get("conditions_verified"):
                     status = "NEEDS_REVIEW"
@@ -306,13 +329,18 @@ def scan_github_actions(workspace: Path, repository: str,
                     status = "APPROVED_WITH_CONDITIONS" if category == "LGPL" else "PASS"
             else:
                 status = "NEEDS_REVIEW"
+            license_evidence = [{"kind": "workflow_uses", "path": str(path.relative_to(workspace)),
+                                 "line": line_number, "value": value}]
+            license_evidence.extend(evidence_record.get("license_evidence", []))
+            source_commit = evidence_record.get("source_commit")
+            if not source_commit and immutable_ref:
+                source_commit = revision
             records.append({
                 "repository": repository, "ecosystem": "github-actions", "name": name,
-                "version": revision, "package_id": key, "source": source,
-                "source_commit": revision if re.fullmatch(r"[0-9a-fA-F]{40}", revision) else None,
-                "upstream_url": source, "license": license_expr, "license_category": category,
-                "license_evidence": [{"kind": "workflow_uses", "path": str(path.relative_to(workspace)),
-                                     "line": line_number, "value": value}],
+                "version": revision, "package_id": key, "source": evidence_record.get("upstream_url") or source,
+                "source_commit": source_commit, "upstream_url": evidence_record.get("upstream_url") or source,
+                "license": license_expr, "license_category": category,
+                "license_evidence": license_evidence, "ref_is_immutable": immutable_ref,
                 "dependency_type": "build-time", "enabled_features": [],
                 "status": status, "distribution": "build-time dependency; release inclusion not established",
                 "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
@@ -454,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cargo-metadata", type=Path, action="append", default=[])
     parser.add_argument("--decisions", type=Path)
     parser.add_argument("--coverage", type=Path, help="human-reviewed no-manifest coverage registry")
+    parser.add_argument("--evidence", type=Path, help="upstream license/source evidence catalog")
     parser.add_argument("--json", type=Path, default=Path("dependency-audit.json"))
     parser.add_argument("--markdown", type=Path, default=Path("DEPENDENCY_LICENSE_AUDIT.md"))
     parser.add_argument("--strict", action="store_true", help="fail for any non-PASS dependency or unresolved manifest")
@@ -466,6 +495,7 @@ def main(argv: list[str] | None = None) -> int:
         decisions = load_decisions(args.decisions)
         coverage_records = load_coverage(args.coverage)
         coverage_decision = coverage_records.get(repository)
+        upstream_evidence = load_upstream_evidence(args.evidence)
         manifests = scan_manifests(workspace, repository)
         assets, provenance = scan_assets(workspace, repository)
         license_documents = [item for item in provenance if "sha256" in item]
@@ -475,7 +505,7 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions))
-        dependencies.extend(scan_github_actions(workspace, repository, decisions))
+        dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
         dependencies = merge_cargo_records(dependencies)
         # Without cargo metadata, preserve lockfile inventory but never infer licenses.
         if not metadata_paths:
