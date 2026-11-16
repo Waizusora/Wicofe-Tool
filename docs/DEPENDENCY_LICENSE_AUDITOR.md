@@ -34,7 +34,8 @@ GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes AP
 ## Current support and limitations
 
 - Cargo: resolved direct/transitive graph from `cargo metadata` in both default-feature and `--all-features` contexts. Metadata is captured without `--filter-platform` so target-conditioned dependency edges are retained; this is dependency resolution, not a compile/test for each target. Package features, dependency kinds, source identifiers, checksums and upstream license-file hashes are recorded. The cross-repository workflow resolves missing lockfiles in its disposable checkout and uploads generated lockfiles as audit evidence; this does not add lockfiles to source repositories.
-- Build scripts: shell/Make/CMake/Meson/build.rs and Docker/Compose inputs are inventoried; common external download/package-manager commands and container base images are surfaced as unresolved build-time dependencies.
+- Build scripts and workflows: shell/Make/CMake/Meson/build.rs, GitHub workflow YAML, Docker/Compose inputs, hosted runner labels, apt package installs, common download/package-manager commands and container base images are inventoried. A `rust-toolchain.toml` pin is captured as a build-time toolchain dependency.
+- Apt package inventories from actual CI runners can be attached as evidence artifacts; source scanning alone records declared package names/versions but does not resolve all transitive system packages.
 - GitHub Actions: external `uses:` references in workflow and composite-action files are inventoried as build-time dependencies. Mutable tags and Docker action references remain UNKNOWN/NEEDS_REVIEW until their source commit and license are verified.
 - Cargo.lock alone: package/version/source/checksum inventory only; license UNKNOWN.
 - npm, pnpm, Yarn, Go, Maven, Gradle, CMake, Meson and Make: manifest discovery only; resolver integration is pending and strict mode blocks unresolved ecosystems.
