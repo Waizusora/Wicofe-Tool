@@ -291,7 +291,8 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
     dependencies = []
     excluded = {".git", "target", "node_modules", ".venv", ".gradle"}
     script_names = {"Makefile", "makefile", "GNUmakefile", "CMakeLists.txt", "meson.build",
-                    "build.rs", "Dockerfile", "Containerfile"}
+                    "build.rs", "Dockerfile", "Containerfile", "docker-compose.yml",
+                    "docker-compose.yaml", "compose.yml", "compose.yaml"}
     script_extensions = {".sh", ".bash", ".ps1", ".bat", ".cmd", ".mk"}
     external_patterns = [
         ("curl", re.compile(r"\bcurl\b", re.IGNORECASE)),
@@ -313,7 +314,8 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
     for path in sorted(workspace.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
             continue
-        if path.name not in script_names and path.suffix.lower() not in script_extensions:
+        if (path.name not in script_names and not path.name.startswith("Dockerfile.")
+                and path.suffix.lower() not in script_extensions):
             continue
         try:
             raw = path.read_bytes()
@@ -329,7 +331,7 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
         scripts.append({"repository": repository, "path": rel, "size_bytes": len(raw),
                         "sha256": hashlib.sha256(raw).hexdigest(),
                         "external_command_matches": matches,
-                        "status": "NEEDS_REVIEW" if matches else "DISCOVERED"})
+                        "status": "NEEDS_REVIEW" if matches or path.name == "build.rs" else "DISCOVERED"})
         for match in matches:
             dependencies.append({
                 "repository": repository, "ecosystem": "build-script-command",
@@ -342,11 +344,36 @@ def scan_build_scripts(workspace: Path, repository: str) -> tuple[list[dict[str,
                 "status": "UNKNOWN", "distribution": "build-time command; payload not established",
                 "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
             })
-        if path.name in {"Dockerfile", "Containerfile"}:
+        if path.name in {"Dockerfile", "Containerfile"} or path.name.startswith("Dockerfile."):
             for line_number, line in enumerate(content.splitlines(), start=1):
                 match = re.match(r"^\s*FROM\s+(?:--platform=\S+\s+)?([^\s]+)", line, re.IGNORECASE)
                 if match and match.group(1).lower() != "scratch":
                     image = match.group(1)
+                    dependencies.append({
+                        "repository": repository, "ecosystem": "container-image",
+                        "name": image, "version": "tag-or-digest-not-verified",
+                        "package_id": f"container-image:{image}",
+                        "license": None, "license_category": "UNKNOWN",
+                        "license_evidence": [{"kind": "docker_from", "path": rel, "line": line_number}],
+                        "dependency_type": "build-time", "enabled_features": [],
+                        "status": "UNKNOWN", "distribution": "container base image; final inclusion unknown",
+                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                    })
+        if path.name in {"docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"}:
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                match = re.match(r"^\s*image:\s*([^\s#]+)", line, re.IGNORECASE)
+                if match:
+                    image = match.group(1).strip("'\"")
+                    dependencies.append({
+                        "repository": repository, "ecosystem": "container-image",
+                        "name": image, "version": "tag-or-digest-not-verified",
+                        "package_id": f"container-image:{image}",
+                        "license": None, "license_category": "UNKNOWN",
+                        "license_evidence": [{"kind": "compose_image", "path": rel, "line": line_number}],
+                        "dependency_type": "runtime", "enabled_features": [],
+                        "status": "UNKNOWN", "distribution": "container image; final inclusion unknown",
+                        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                    })
                     dependencies.append({
                         "repository": repository, "ecosystem": "container-image",
                         "name": image, "version": "tag-or-digest-not-verified",
