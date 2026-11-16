@@ -49,6 +49,7 @@ jobs:
             root="workspace/$repo"
             args=(--workspace "$root" --repository "$repo"
               --decisions Wicofe-Tools/config/dependency_license_decisions.example.json
+              --coverage Wicofe-Tools/config/repository_dependency_coverage.example.json
               --strict --json "reports/dependencies/$repo.json"
               --markdown "reports/dependencies/$repo.md")
             mapfile -d '' manifests < <(
