@@ -248,7 +248,7 @@
       "license": "BSD-2-Clause",
       "upstream_url": "https://github.com/Limine-Bootloader/Limine",
       "release_asset_url": "https://github.com/Limine-Bootloader/Limine/releases/download/v12.9.6/limine-binary.tar.xz",
-      "release_asset_sha256": "939f670e75e75afdc20536c73f7e7cdbd379cab67a17c17e0bb0ed92a8ccf78c",
+      "release_asset_sha256": "939f670e0831cc940453fd3a0ddfb2b324c0b4e3c5d0e741c190aa0d13df0103",
       "tag_signature_verified": true,
       "bundled_component_licenses": [
         "0BSD",
