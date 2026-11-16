@@ -268,7 +268,7 @@ def scan_github_actions(workspace: Path, repository: str,
                        decisions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Inventory external actions used by workflows/composite actions as build-time deps."""
     records = []
-    uses_pattern = re.compile(r"^\s*uses:\s*([^\s#]+)", re.MULTILINE)
+    uses_pattern = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)", re.MULTILINE)
     action_files = list(workspace.glob(".github/workflows/*.yml"))
     action_files += list(workspace.glob(".github/workflows/*.yaml"))
     action_files += list(workspace.glob(".github/actions/**/action.yml"))
