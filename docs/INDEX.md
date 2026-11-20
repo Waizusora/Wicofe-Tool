@@ -6,7 +6,8 @@ This directory documents project-wide development, maintenance, validation, and 
 
 - [Repository documentation validator](REPOSITORY_DOCUMENTATION_VALIDATOR.md) — local Markdown link, anchor, workspace-safety and forbidden-term checks.
 - [Repository inventory validator](REPOSITORY_INVENTORY_VALIDATOR.md) — compares a local checkout workspace with the canonical 29-repository inventory.
-- [Dependency audit findings (2026-11-20)](DEPENDENCY_AUDIT_FINDINGS_2026-11-20.md) — 29-repository coverage, missing license documents, and confirmed CI host-tool findings.
+- [Dependency audit findings (2026-11-20)](DEPENDENCY_AUDIT_FINDINGS_2026-11-20.md)
+- [Repository dependency manifest coverage review](REPOSITORY_DEPENDENCY_MANIFEST_COVERAGE.md) — supported manifest discovery across the canonical 29 repositories. — 29-repository coverage, missing license documents, and confirmed CI host-tool findings.
 - [Dependency License Auditor](DEPENDENCY_LICENSE_AUDITOR.md) — resolves Cargo dependency metadata, inventories manifests, build-time actions and assets, applies scoped human decisions, and fails closed on unresolved evidence.
 - [Dependency License CI Enforcement](DEPENDENCY_LICENSE_CI_ENFORCEMENT.md) — documents local and 29-repository workflows, strict-gate semantics, and release integration boundaries.
 - [Upstream license evidence catalog](../config/upstream_license_evidence.json) — immutable source snapshots and license-file evidence; not approvals.
