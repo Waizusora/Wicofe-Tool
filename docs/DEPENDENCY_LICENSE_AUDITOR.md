@@ -73,7 +73,7 @@ license approval separate from graph resolution:
 - **Gradle, Maven, Nix, Bazel, Conda, Poetry, Bundler, Composer and other
   discovered formats:** currently discovery-only and explicitly unresolved.
 
-A resolved version is not a license finding. The resolver consults the
+A resolved version is not a license finding. An upstream license-evidence record is provenance, not approval; even a recognized permissive license requires an explicit scoped decision for these non-Cargo resolver records. The resolver consults the
 existing upstream evidence catalog and human decision registry using
 ecosystem-qualified keys (`npm:name:version`, `python:name:version`,
 `go:module-path:version`). Missing license evidence remains `UNKNOWN`;
@@ -81,7 +81,7 @@ evidence without an approved decision remains subject to the policy gate.
 Resolver execution failures and unsupported manifests are recorded as
 unresolved and cause strict mode to fail.
 
-The Python adapter uses pip's dry-run report, so it can require network access
+The Python adapter uses pip's dry-run report with `--only-binary=:all:`, so it can require network access
 to resolve uncached packages. The Go adapter uses the Go module tool and may
 also require network access. npm package-lock v2/v3 is parsed locally without
 running package lifecycle scripts. No resolver executes dependency build
