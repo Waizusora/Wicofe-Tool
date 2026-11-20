@@ -517,6 +517,99 @@ def _decode_concatenated_json(content: str) -> list[dict[str, Any]]:
     return values
 
 
+def parse_maven_tgf(content: str) -> list[dict[str, str]]:
+    """Parse Maven dependency-plugin TGF output into a root-relative graph."""
+    nodes: dict[str, dict[str, str]] = {}
+    edges: dict[str, list[str]] = {}
+    in_edges = False
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line == "#":
+            in_edges = True
+            continue
+        if not in_edges:
+            match = re.match(r"^(\\S+)\\s+\\[(.+)\\]$", line)
+            if not match:
+                raise ValueError(f"unsupported Maven TGF node: {line[:240]}")
+            parts = match.group(2).split(":")
+            if len(parts) not in {5, 6}:
+                raise ValueError(f"unsupported Maven coordinate: {match.group(2)}")
+            group, artifact = parts[0], parts[1]
+            version = parts[-2]
+            nodes[match.group(1)] = {"name": f"{group}:{artifact}", "version": version}
+        else:
+            match = re.match(r"^(\\S+)\\s+(\\S+)$", line)
+            if not match:
+                raise ValueError(f"unsupported Maven TGF edge: {line[:240]}")
+            edges.setdefault(match.group(1), []).append(match.group(2))
+    if not nodes:
+        raise ValueError("Maven TGF output contains no dependency nodes")
+    root = next(iter(nodes))
+    depth = {root: 0}
+    queue = [root]
+    while queue:
+        parent = queue.pop(0)
+        for child in edges.get(parent, []):
+            if child not in nodes:
+                raise ValueError(f"Maven TGF edge references missing node {child}")
+            if child not in depth or depth[child] > depth[parent] + 1:
+                depth[child] = depth[parent] + 1
+                queue.append(child)
+    return [{"name": nodes[node]["name"], "version": nodes[node]["version"],
+             "dependency_type": "direct" if depth[node] == 1 else "transitive"}
+            for node in sorted(depth, key=lambda item: (depth[item], item)) if node != root]
+
+
+def parse_nix_flake_lock(content: str) -> list[dict[str, str]]:
+    """Resolve reachable flake.lock nodes from root inputs, preserving immutable revisions."""
+    data = json.loads(content)
+    nodes = data.get("nodes")
+    root_id = data.get("root")
+    if not isinstance(nodes, dict) or root_id not in nodes:
+        raise ValueError("flake.lock must contain nodes and a valid root")
+    root_inputs = nodes[root_id].get("inputs", {})
+    if not isinstance(root_inputs, dict):
+        raise ValueError("flake.lock root inputs must be an object")
+    queue = [(value, "direct") for _, value in sorted(root_inputs.items()) if isinstance(value, str)]
+    unsupported = [name for name, value in root_inputs.items() if not isinstance(value, str)]
+    if unsupported:
+        raise ValueError(f"flake input follows syntax requires resolution: {', '.join(sorted(unsupported))}")
+    seen: dict[str, str] = {}
+    while queue:
+        node_id, relation = queue.pop(0)
+        if node_id in seen and seen[node_id] == "direct":
+            continue
+        seen[node_id] = relation
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            raise ValueError(f"flake.lock references missing node {node_id}")
+        inputs = node.get("inputs", {})
+        if not isinstance(inputs, dict):
+            raise ValueError(f"flake node {node_id} inputs must be an object")
+        for _, child in sorted(inputs.items()):
+            if isinstance(child, str) and child not in seen:
+                queue.append((child, "transitive"))
+            elif not isinstance(child, str):
+                raise ValueError(f"flake node {node_id} contains unsupported follows input")
+    rows = []
+    for node_id, relation in sorted(seen.items()):
+        locked = nodes[node_id].get("locked", {})
+        original = nodes[node_id].get("original", {})
+        version = (locked.get("rev") or locked.get("narHash") or locked.get("ref")
+                   or locked.get("lastModified"))
+        if not version:
+            raise ValueError(f"flake node {node_id} has no immutable lock identity")
+        name = (original.get("id") or original.get("repo") or original.get("owner")
+                or node_id)
+        source = locked.get("url") or locked.get("type") or original.get("type") or "flake"
+        rows.append({"name": str(name), "version": str(version),
+                     "source": str(source), "dependency_type": relation,
+                     "checksum": locked.get("narHash")})
+    return rows
+
+
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
                                 upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -667,6 +760,47 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "gradle",
                                "reason": f"cannot read Gradle lockfile: {exc}"})
 
+    # Nix flake.lock is a JSON graph rooted at the flake's root input map.
+    nix_lock_paths = [workspace / p for p, e in paths.items() if e == "nix-lock"]
+    nix_lock_dirs = {path.parent for path in nix_lock_paths}
+    for path in nix_lock_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            for package in parse_nix_flake_lock(path.read_text(encoding="utf-8")):
+                dependencies.append(_resolved_dependency_record(
+                    "nix", package["name"], package["version"], repository,
+                    decisions, upstream_evidence, package["dependency_type"],
+                    package["source"], package.get("checksum")))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "nix",
+                               "reason": f"flake.lock resolver failed: {exc}"})
+
+    # Maven's pinned dependency plugin emits a TGF graph without running project lifecycle goals.
+    maven_paths = [workspace / p for p, e in paths.items() if e == "maven"]
+    maven_dirs = {path.parent for path in maven_paths}
+    for path in maven_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            with tempfile.TemporaryDirectory(prefix="wicofe-maven-audit-") as tmp:
+                output_path = Path(tmp) / "dependency-tree.tgf"
+                command = ["mvn", "-B", "-ntp",
+                           "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree",
+                           "-DoutputType=tgf", f"-DoutputFile={output_path}"]
+                result = subprocess.run(command, cwd=path.parent, capture_output=True,
+                                        text=True, timeout=900)
+                if result.returncode != 0:
+                    raise RuntimeError((result.stderr or result.stdout).strip()[-2000:])
+                graph = parse_maven_tgf(output_path.read_text(encoding="utf-8"))
+                for package in graph:
+                    dependencies.append(_resolved_dependency_record(
+                        "maven", package["name"], package["version"], repository,
+                        decisions, upstream_evidence, package["dependency_type"],
+                        "maven-dependency-plugin:3.8.1", None))
+        except (OSError, UnicodeError, subprocess.SubprocessError, RuntimeError,
+                ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "maven",
+                               "reason": f"Maven dependency resolver failed: {exc}"})
+
     # Go's module graph is emitted as concatenated JSON objects.
     go_manifests = [p for p, e in paths.items() if e == "go"]
     for relative in go_manifests:
@@ -693,7 +827,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
-               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock"}
+               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "nix-lock", "maven"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
@@ -724,6 +858,10 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
         if ecosystem in {"python", "pipenv"} and path.parent in python_lock_dirs:
             continue
         if ecosystem == "gradle" and path.parent in gradle_lock_dirs:
+            continue
+        if ecosystem == "nix" and path.parent in nix_lock_dirs:
+            continue
+        if ecosystem == "maven" and path.parent in maven_dirs:
             continue
         unresolved.append({"path": relative, "ecosystem": ecosystem,
                            "reason": "no native resolver adapter is implemented yet"})
