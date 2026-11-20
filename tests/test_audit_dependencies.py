@@ -408,14 +408,15 @@ class LicenseAuditTests(unittest.TestCase):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "uv.lock").write_text(
-                '[[package]]\\nname = "uv-sample"\\nversion = "1.2.3"\\n'
-                'source = { registry = "https://pypi.org/simple" }\\n'
-                'sdist = { hash = "sha256:uvhash" }\\n', encoding="utf-8")
-            (root / "poetry.lock").write_text(
-                '[[package]]\\nname = "poetry-sample"\\nversion = "4.5.6"\\n'
-                'files = [{file = "sample.whl", hash = "sha256:poetryhash"}]\\n',
-                encoding="utf-8")
+            uv_content = "\\n".join([
+                '[[package]]', 'name = "uv-sample"', 'version = "1.2.3"',
+                'source = { registry = "https://pypi.org/simple" }',
+                'sdist = { hash = "sha256:uvhash" }', ''])
+            poetry_content = "\\n".join([
+                '[[package]]', 'name = "poetry-sample"', 'version = "4.5.6"',
+                'files = [{file = "sample.whl", hash = "sha256:poetryhash"}]', ''])
+            (root / "uv.lock").write_text(uv_content, encoding="utf-8")
+            (root / "poetry.lock").write_text(poetry_content, encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual([], unresolved)
             self.assertEqual({"uv-sample", "poetry-sample"}, {row["name"] for row in rows})
