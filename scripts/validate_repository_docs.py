@@ -112,17 +112,30 @@ def scan_markdown_file(path: Path, workspace: Path, forbidden_terms: list[str]) 
             if not target:
                 continue
             parsed = urlsplit(target)
-            if parsed.scheme or parsed.netloc:
-                continue
-
-            raw_path = parsed.path
             fragment = parsed.fragment
-            if not raw_path:
-                destination = path
-            elif raw_path.startswith("/"):
-                destination = workspace / raw_path.lstrip("/")
+            if parsed.scheme or parsed.netloc:
+                if parsed.netloc.casefold() not in {"github.com", "www.github.com"}:
+                    continue
+                parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+                if len(parts) < 2 or parts[0].casefold() != "waizusora":
+                    continue
+
+                repo_root = workspace / parts[1]
+                if len(parts) == 2:
+                    destination = repo_root
+                elif len(parts) >= 5 and parts[2] in {"blob", "tree"} and parts[3] == "main":
+                    destination = repo_root.joinpath(*parts[4:])
+                else:
+                    # Non-main refs cannot be verified against the shallow main checkouts.
+                    continue
             else:
-                destination = path.parent / raw_path
+                raw_path = parsed.path
+                if not raw_path:
+                    destination = path
+                elif raw_path.startswith("/"):
+                    destination = workspace / raw_path.lstrip("/")
+                else:
+                    destination = path.parent / raw_path
 
             try:
                 destination = destination.resolve(strict=False)
