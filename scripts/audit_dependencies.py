@@ -1040,6 +1040,13 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 raise ValueError(
                     f"{project_path}:{config_name}: failures must be an array"
                 )
+            for failure in config_failures:
+                if not isinstance(failure, dict):
+                    raise ValueError(f"{project_path}:{config_name}: malformed failure entry")
+                failures.append(
+                    f"{project_path}:{config_name}: "
+                    f"{failure.get('reason', 'unresolved Gradle dependency')}"
+                )
 
             component_ids = set()
             for component in components:
