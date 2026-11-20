@@ -44,7 +44,7 @@ jobs:
         run: >-
           gradle --no-daemon
           -p tests/fixtures/gradle-integration
-          -I scripts/gradle_dependency_graph.init.gradle
+          -I "$GITHUB_WORKSPACE/scripts/gradle_dependency_graph.init.gradle"
           -PwicofeDependencyGraphOutput=/tmp/gradle-dependency-graph.json
           wicofeExportGradleDependencyGraph
       - name: Validate Gradle graph and variant metadata
