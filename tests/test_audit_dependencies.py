@@ -11,6 +11,39 @@ from audit_dependencies import (blocked_dependency_diagnostics, classify_license
 
 
 class LicenseAuditTests(unittest.TestCase):
+    def test_gradle_version_catalog_library_plugin_and_version_refs(self):
+        from audit_dependencies import parse_gradle_version_catalog
+        content = '''[versions]
+kotlin = "2.0.21"
+coroutines = { strictly = "1.9.0" }
+
+[libraries]
+core = { module = "org.example:core", version.ref = "kotlin" }
+coroutines = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+legacy = "com.example:legacy:3.2.1"
+
+[plugins]
+android = { id = "com.android.application", version = "8.7.2" }
+kotlin = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+
+[bundles]
+'''
+        rows = parse_gradle_version_catalog(content)
+        self.assertEqual(5, len(rows))
+        library = next(row for row in rows if row["alias"] == "core")
+        self.assertEqual("org.example:core", library["name"])
+        self.assertEqual("2.0.21", library["version"])
+        strict = next(row for row in rows if row["alias"] == "coroutines")
+        self.assertEqual("1.9.0", strict["version"])
+        plugin = next(row for row in rows if row["alias"] == "android")
+        self.assertEqual("com.android.application", plugin["name"])
+        self.assertEqual("8.7.2", plugin["version"])
+
+    def test_gradle_version_catalog_rejects_invalid_library_coordinate(self):
+        from audit_dependencies import parse_gradle_version_catalog
+        with self.assertRaises(ValueError):
+            parse_gradle_version_catalog('[libraries]\\nbad = "missing-version"\\n')
+
     def test_yarn_lock_classic_and_berry_entries(self):
         from audit_dependencies import parse_yarn_lock
         classic = '''# yarn lockfile v1
