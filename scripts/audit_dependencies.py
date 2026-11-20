@@ -728,6 +728,164 @@ def parse_nix_flake_lock(content: str) -> list[dict[str, str]]:
     return rows
 
 
+def _split_lock_selectors(header: str) -> list[str]:
+    """Split Yarn selector lists without splitting commas inside quoted selectors."""
+    values, current, quote = [], "", None
+    for char in header:
+        if char in {"'", '"'}:
+            if quote == char:
+                quote = None
+            elif quote is None:
+                quote = char
+        if char == "," and quote is None:
+            if current.strip():
+                values.append(current.strip().strip("'\""))
+            current = ""
+        else:
+            current += char
+    if current.strip():
+        values.append(current.strip().strip("'\""))
+    return values
+
+
+def parse_yarn_lock(content: str) -> list[dict[str, str]]:
+    """Parse Yarn Classic and Berry lock entries; reject unsupported or incomplete stanzas."""
+    rows = []
+    current_selectors: list[str] = []
+    version = None
+    source = None
+    integrity = None
+
+    def flush() -> None:
+        if not current_selectors:
+            return
+        if not version:
+            raise ValueError(f"Yarn lock entry has no version: {current_selectors[0]}")
+        for selector in current_selectors:
+            selector = selector.removeprefix("__metadata")
+            selector = re.sub(r"^(?:npm|patch|portal|workspace):", "", selector)
+            # Selectors are package-name@range; scoped names contain one leading @.
+            split_at = selector.find("@", 1 if selector.startswith("@") else 0)
+            if split_at <= 0:
+                raise ValueError(f"unsupported Yarn selector: {selector}")
+            name = selector[:split_at]
+            rows.append({"name": name, "version": version, "source": source or "yarn-lock",
+                         "checksum": integrity or "", "dependency_type": "locked"})
+    for raw in content.splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if raw[0] not in " \\t":
+            if raw.endswith(":"):
+                flush()
+                current_selectors = _split_lock_selectors(raw[:-1])
+                version = source = integrity = None
+                continue
+            raise ValueError(f"unsupported Yarn lock top-level line: {raw[:160]}")
+        match = re.match(r"^\\s+(version|resolved|resolution|integrity|checksum):\\s*(.*?)\\s*$", raw)
+        if not match:
+            continue
+        key, value = match.groups()
+        value = value.strip().strip("'\"")
+        if key == "version":
+            version = value
+        elif key in {"resolved", "resolution"}:
+            source = value
+        elif key in {"integrity", "checksum"}:
+            integrity = value
+    flush()
+    if not rows:
+        raise ValueError("Yarn lockfile contains no supported package entries")
+    return rows
+
+
+def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
+    """Parse pnpm v5-v9 package snapshots without executing package scripts."""
+    lines = content.splitlines()
+    lock_version = None
+    section = None
+    package_entries: list[tuple[str, str]] = []
+    current_key = None
+    current_version = None
+    current_indent = None
+    importers: dict[str, set[str]] = {}
+    importer_name = None
+    importer_indent = None
+    importer_section = None
+
+    def finish_package() -> None:
+        nonlocal current_key, current_version
+        if current_key is not None:
+            package_entries.append((current_key, current_version or ""))
+        current_key = current_version = None
+
+    for raw in lines:
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        line = raw.strip()
+        if indent == 0 and line.startswith("lockfileVersion:"):
+            lock_version = line.split(":", 1)[1].strip().strip("'\"")
+        if indent == 0 and line in {"packages:", "importers:"}:
+            finish_package()
+            section = line[:-1]
+            importer_name = importer_section = None
+            continue
+        if section == "packages":
+            if indent == 2 and line.endswith(":"):
+                finish_package()
+                current_key = line[:-1].strip("'\"")
+                current_indent = indent
+                continue
+            if current_key is not None and indent > (current_indent or 2):
+                match = re.match(r"(?:version|resolution):\\s*(?:\\{.*?\\bversion:\\s*([^,}]+).*\\}|([^\\s]+))", line)
+                if match:
+                    current_version = (match.group(1) or match.group(2) or "").strip("'\"")
+                elif line.startswith("version:"):
+                    current_version = line.split(":", 1)[1].strip().strip("'\"")
+        elif section == "importers":
+            if indent == 2 and line.endswith(":"):
+                importer_name = line[:-1].strip("'\"") or "."
+                importers.setdefault(importer_name, set())
+                importer_section = None
+            elif importer_name is not None and indent == 4 and line.endswith(":"):
+                importer_section = line[:-1]
+            elif importer_name is not None and indent >= 6 and importer_section in {
+                    "dependencies", "devDependencies", "optionalDependencies"}:
+                name = line.split(":", 1)[0].strip("'\"")
+                if name:
+                    importers[importer_name].add(name)
+    finish_package()
+    if not lock_version:
+        raise ValueError("pnpm lockfile has no lockfileVersion")
+    if not package_entries:
+        raise ValueError("pnpm lockfile contains no package snapshots")
+    direct_names = set().union(*importers.values()) if importers else set()
+    rows = []
+    for key, version in package_entries:
+        if not version:
+            # v5/v6 keys include /name/version; v9 keys include name@version.
+            match = re.search(r"/([^/]+)/([^/()]+)(?:\\(|$)", key)
+            if match:
+                version = match.group(2)
+            else:
+                match = re.search(r"(?<!^)@?((?:@[^/]+/)?[^@]+)@([^()]+)", key)
+                if match:
+                    version = match.group(2).split("_", 1)[0]
+        if not version:
+            raise ValueError(f"pnpm package entry has no locked version: {key}")
+        key = key.lstrip("/")
+        if key.startswith("@"):
+            name_match = re.match(r"(@[^/]+/[^@(/]+)", key)
+        else:
+            name_match = re.match(r"([^@(/]+)", key)
+        if not name_match:
+            raise ValueError(f"unsupported pnpm package key: {key}")
+        name = name_match.group(1)
+        rows.append({"name": name, "version": version, "source": f"pnpm-lock:{lock_version}",
+                     "checksum": "", "dependency_type": "direct" if name in direct_names else "transitive"})
+    return rows
+
+
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
                                 upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -737,6 +895,40 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     unresolved: list[dict[str, str]] = []
     manifests = scan_manifests(workspace, repository)
     paths = {item["path"]: item["ecosystem"] for item in manifests}
+
+    # pnpm lockfiles: parse immutable package snapshots and importer declarations.
+    pnpm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "pnpm-lock"}
+    for relative, ecosystem in paths.items():
+        if ecosystem != "pnpm-lock":
+            continue
+        try:
+            for package in parse_pnpm_lock((workspace / relative).read_text(encoding="utf-8")):
+                dependencies.append(_resolved_dependency_record(
+                    "pnpm", package["name"], package["version"], repository,
+                    decisions, upstream_evidence, package["dependency_type"],
+                    package["source"], package.get("checksum") or None))
+        except (OSError, UnicodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "pnpm",
+                               "reason": f"pnpm lock resolver failed: {exc}"})
+
+    # Yarn Classic/Berry lockfiles are parsed locally; package lifecycle scripts are never run.
+    yarn_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "yarn-lock"}
+    for relative, ecosystem in paths.items():
+        if ecosystem != "yarn-lock":
+            continue
+        try:
+            package_json = workspace / Path(relative).parent / "package.json"
+            manifest = json.loads(package_json.read_text(encoding="utf-8")) if package_json.is_file() else {}
+            direct_names = set(manifest.get("dependencies", {})) | set(manifest.get("devDependencies", {}))
+            for package in parse_yarn_lock((workspace / relative).read_text(encoding="utf-8")):
+                relation = "direct" if package["name"] in direct_names else "transitive"
+                dependencies.append(_resolved_dependency_record(
+                    "yarn", package["name"], package["version"], repository,
+                    decisions, upstream_evidence, relation, package["source"],
+                    package.get("checksum") or None))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "yarn",
+                               "reason": f"Yarn lock resolver failed: {exc}"})
 
     # Python lockfiles are authoritative version graphs; license approval is still separate.
     python_lock_paths = [(workspace / p, e) for p, e in paths.items()
@@ -959,7 +1151,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                "reason": f"go module resolver failed: {exc}"})
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
-    handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
+    handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock", "pnpm-lock", "yarn-lock",
                "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "nix-lock", "maven", "bazel-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
@@ -987,6 +1179,8 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                    "reason": "go.sum has no adjacent go.mod"})
             continue
         if ecosystem == "npm" and path.parent in npm_lock_dirs:
+            continue
+        if ecosystem == "pnpm-lock" or ecosystem == "yarn-lock":
             continue
         if ecosystem in {"python", "pipenv"} and path.parent in python_lock_dirs:
             continue
