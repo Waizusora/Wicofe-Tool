@@ -403,5 +403,57 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertIn("GPL-2.0-or-later", diagnostics[0])
         self.assertIn(".github/workflows/kernel-check.yml:20", diagnostics[0])
 
+
+    def test_npm_lock_v3_resolves_exact_versions_but_keeps_license_unknown(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "package.json").write_text(json.dumps({
+                "name": "fixture", "dependencies": {"left-pad": "^1.3.0"}}), encoding="utf-8")
+            (root / "package-lock.json").write_text(json.dumps({
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"dependencies": {"left-pad": "^1.3.0"}},
+                    "node_modules/left-pad": {"version": "1.3.0",
+                                               "resolved": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+                                               "integrity": "sha512-fixture"}
+                }}), encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            self.assertEqual(1, len(rows))
+            self.assertEqual(("npm", "left-pad", "1.3.0"),
+                             (rows[0]["ecosystem"], rows[0]["name"], rows[0]["version"]))
+            self.assertEqual("direct", rows[0]["dependency_type"])
+            self.assertEqual("UNKNOWN", rows[0]["status"])
+            self.assertEqual("sha512-fixture", rows[0]["checksum"])
+
+    def test_npm_lock_does_not_infer_license_from_lockfile(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "package-lock.json").write_text(json.dumps({
+                "lockfileVersion": 1, "dependencies": {"legacy": {"version": "1.0.0"}}}),
+                encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], rows)
+            self.assertEqual("only npm package-lock v2/v3 is supported", unresolved[0]["reason"])
+
+    def test_go_json_stream_decoder_handles_adjacent_module_records(self):
+        from audit_dependencies import _decode_concatenated_json
+        rows = _decode_concatenated_json(
+            '{"Path":"example.com/a","Version":"v1.0.0"}\\n'
+            '{"Path":"example.com/b","Version":"v2.0.0"}\\n')
+        self.assertEqual(["example.com/a", "example.com/b"], [row["Path"] for row in rows])
+
+    def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "build.gradle.kts").write_text("plugins {}\\n", encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], rows)
+            self.assertEqual("gradle", unresolved[0]["ecosystem"])
+            self.assertIn("no native resolver adapter", unresolved[0]["reason"])
+
 if __name__ == "__main__":
     unittest.main()
