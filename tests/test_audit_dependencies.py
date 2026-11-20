@@ -841,7 +841,7 @@ configurations.configureEach {
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual([], rows)
             self.assertEqual("gradle", unresolved[0]["ecosystem"])
-            self.assertIn("no native resolver adapter", unresolved[0]["reason"])
+            self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
 
 if __name__ == "__main__":
     unittest.main()
