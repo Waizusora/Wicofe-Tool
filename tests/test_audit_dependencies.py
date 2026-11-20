@@ -67,10 +67,14 @@ class LicenseAuditTests(unittest.TestCase):
                          "group": "org.example", "module": "direct", "version": "1.0"},
                         {"id": "org.example:transitive:2.0", "kind": "module",
                          "group": "org.example", "module": "transitive", "version": "2.0"},
+                        {"id": "org.example:constraint-only:3.0", "kind": "module",
+                         "group": "org.example", "module": "constraint-only", "version": "3.0"},
                     ],
                     "edges": [
                         {"from": "project :app", "to": "org.example:direct:1.0",
                          "requested": "org.example:direct:1.0", "constraint": False},
+                        {"from": "project :app", "to": "org.example:constraint-only:3.0",
+                         "requested": "org.example:constraint-only:3.0", "constraint": True},
                         {"from": "org.example:direct:1.0", "to": "org.example:transitive:2.0",
                          "requested": "org.example:transitive:2.0", "constraint": False},
                     ],
@@ -83,9 +87,12 @@ class LicenseAuditTests(unittest.TestCase):
         by_name = {row["name"]: row for row in rows}
         self.assertEqual("direct", by_name["org.example:direct"]["dependency_type"])
         self.assertEqual("transitive", by_name["org.example:transitive"]["dependency_type"])
+        self.assertEqual("transitive", by_name["org.example:constraint-only"]["dependency_type"])
         self.assertEqual(["runtimeClasspath"], by_name["org.example:direct"]["configurations"])
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["requested"])
+        self.assertEqual("org.example:transitive:2.0",
+                         by_name["org.example:direct"]["edges"][0]["selected"])
 
     def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
         from audit_dependencies import parse_gradle_resolution_graph
