@@ -874,6 +874,29 @@ def git_revision(workspace: Path) -> str | None:
         return None
 
 
+def blocked_dependency_diagnostics(dependencies: list[dict[str, Any]]) -> list[str]:
+    """Return actionable, repository-local diagnostics for every non-approved dependency."""
+    lines = []
+    for item in dependencies:
+        if item.get("status") in {"PASS", "APPROVED_WITH_CONDITIONS"}:
+            continue
+        evidence = next((entry for entry in item.get("license_evidence", [])
+                         if entry.get("path")), {})
+        location = ""
+        if evidence:
+            location = f" at {evidence['path']}"
+            if evidence.get("line"):
+                location += f":{evidence['line']}"
+        lines.append(
+            f"  dependency: {item.get('ecosystem', 'unknown')} "
+            f"{item.get('name', 'unknown')}@{item.get('version', 'unknown')}; "
+            f"license={item.get('license') or 'UNKNOWN'}; "
+            f"status={item.get('status', 'UNKNOWN')}; "
+            f"type={item.get('dependency_type', 'unknown')}{location}"
+        )
+    return lines
+
+
 def markdown_report(report: dict[str, Any]) -> str:
     lines = ["# Dependency License Audit", "", f"- Policy: {report['policy_version']}",
              f"- Repository: {report['repository']}", f"- Generated: {report['generated_at']}",
@@ -1011,9 +1034,24 @@ def main(argv: list[str] | None = None) -> int:
         print("BLOCKED: prohibited GPL/AGPL dependency detected")
     if args.strict and (blocked or unresolved):
         script_matches = sum(len(s["external_command_matches"]) for s in build_scripts)
-        print(f"BLOCKED: coverage={coverage_status}; {len(dependencies)} dependency records; "
-              f"{len(unresolved)} unresolved manifest(s); {script_matches} build-command match(es); "
-              f"{len(assets)} asset(s); {len(submodules)} submodule(s)")
+        print(f"BLOCKED: repository={repository}; coverage={coverage_status}; "
+              f"{len(dependencies)} dependency records; {len(unresolved)} unresolved manifest(s); "
+              f"{script_matches} build-command match(es); {len(assets)} asset(s); "
+              f"{len(submodules)} submodule(s)")
+        for diagnostic in blocked_dependency_diagnostics(dependencies):
+            print(diagnostic)
+        for manifest in unresolved:
+            print(f"  unresolved-manifest: {manifest['path']} ({manifest['ecosystem']})")
+        for script in build_scripts:
+            if script["external_command_matches"]:
+                print(f"  build-script-review: {script['path']} "
+                      f"({len(script['external_command_matches'])} command match(es))")
+        for asset in assets:
+            if asset["status"] != "PASS":
+                print(f"  asset-review: {asset['path']} ({asset['category']}; {asset['status']})")
+        for submodule in submodules:
+            print(f"  submodule-review: {submodule.get('path', submodule.get('manifest', 'unknown'))} "
+                  f"({submodule.get('url', 'URL unknown')})")
         return 1
     print(f"Inventory written: {args.json} and {args.markdown}")
     print(f"Coverage: {coverage_status}; dependencies: {len(dependencies)}; manifests: {len(manifests)}; unresolved manifests: {len(unresolved)}; build scripts: {len(build_scripts)}; assets: {len(assets)}; submodules: {len(submodules)}")
