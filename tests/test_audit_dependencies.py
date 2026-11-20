@@ -404,6 +404,26 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertIn(".github/workflows/kernel-check.yml:20", diagnostics[0])
 
 
+    def test_uv_and_poetry_lockfiles_resolve_python_versions_and_hashes(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "uv.lock").write_text(
+                '[[package]]\\nname = "uv-sample"\\nversion = "1.2.3"\\n'
+                'source = { registry = "https://pypi.org/simple" }\\n'
+                'sdist = { hash = "sha256:uvhash" }\\n', encoding="utf-8")
+            (root / "poetry.lock").write_text(
+                '[[package]]\\nname = "poetry-sample"\\nversion = "4.5.6"\\n'
+                'files = [{file = "sample.whl", hash = "sha256:poetryhash"}]\\n',
+                encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            self.assertEqual({"uv-sample", "poetry-sample"}, {row["name"] for row in rows})
+            self.assertEqual({"1.2.3", "4.5.6"}, {row["version"] for row in rows})
+            self.assertTrue(all(row["dependency_type"] == "locked" for row in rows))
+            self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
+            self.assertIn("sha256:uvhash", next(r for r in rows if r["name"] == "uv-sample")["checksum"])
+
     def test_npm_lock_v3_resolves_exact_versions_but_keeps_license_unknown(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
