@@ -753,6 +753,42 @@ packages:
             parse_maven_tgf("\n".join([
                 "0 [org.example:app:jar:1.0:compile]", "#", "0 9"]))
 
+    def test_gradle_resolution_feature_detection(self):
+        from audit_dependencies import parse_gradle_resolution_features
+        script = '''
+dependencies {
+    implementation(platform("org.example:catalog:1.0"))
+    constraints {
+        implementation("org.example:lib:2.0")
+    }
+}
+configurations.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("org.example:old")).using(module("org.example:new:1.0"))
+    }
+}
+'''
+        self.assertEqual([
+            "dependency constraints", "platform/BOM dependencies",
+            "dependency substitution",
+        ], parse_gradle_resolution_features(script))
+        self.assertEqual([], parse_gradle_resolution_features(
+            'dependencies { implementation("org.example:lib:1.0") }'))
+
+    def test_gradle_lock_does_not_hide_unmodeled_resolution_features(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "build.gradle.kts").write_text(
+                'dependencies { implementation(platform("org.example:bom:1.0")) }\n',
+                encoding="utf-8")
+            (root / "gradle.lockfile").write_text(
+                "org.example:lib:1.0=runtimeClasspath\n", encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual(1, len(rows))
+            finding = next(item for item in unresolved if item["ecosystem"] == "gradle")
+            self.assertIn("platform/BOM dependencies", finding["reason"])
+
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
