@@ -441,8 +441,8 @@ class LicenseAuditTests(unittest.TestCase):
     def test_go_json_stream_decoder_handles_adjacent_module_records(self):
         from audit_dependencies import _decode_concatenated_json
         rows = _decode_concatenated_json(
-            '{"Path":"example.com/a","Version":"v1.0.0"}\\n'
-            '{"Path":"example.com/b","Version":"v2.0.0"}\\n')
+            json.dumps({"Path": "example.com/a", "Version": "v1.0.0"})
+            + json.dumps({"Path": "example.com/b", "Version": "v2.0.0"}))
         self.assertEqual(["example.com/a", "example.com/b"], [row["Path"] for row in rows])
 
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
