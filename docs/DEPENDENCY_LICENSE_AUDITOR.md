@@ -1,6 +1,6 @@
 # Dependency License Auditor
 
-**Status:** Initial implementation; Cargo resolved-graph ingestion and manifest discovery are implemented. Non-Cargo dependency resolution and release-image inventory remain incomplete.
+**Status:** Initial implementation; Cargo, npm lockfile, Python requirements, Go module and Gradle lockfile resolvers are implemented. Other non-Cargo ecosystems and release-image inventory remain incomplete.
 
 ## Inputs
 
@@ -38,7 +38,7 @@ GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes AP
 - Apt package inventories from actual CI runners can be attached as evidence artifacts; source scanning alone records declared package names/versions but does not resolve all transitive system packages.
 - GitHub Actions: external `uses:` references in workflow and composite-action files are inventoried as build-time dependencies. Mutable tags and Docker action references remain UNKNOWN/NEEDS_REVIEW until their source commit and license are verified.
 - Cargo.lock alone: package/version/source/checksum inventory only; license UNKNOWN.
-- npm, pnpm, Yarn, Go, Maven, Gradle, CMake, Meson and Make: manifest discovery only; resolver integration is pending and strict mode blocks unresolved ecosystems.
+- npm package-lock v2/v3, Python requirements, Go modules, and Gradle lockfiles: dependency versions are resolved by dedicated adapters. Python and Go may require network access; Python resolution is binary-only. Missing license evidence or scoped approval remains blocked. pnpm, Yarn, Maven, Gradle build files without lockfiles, Nix, Bazel, Conda, Poetry, CMake, Meson and Make remain discovery-only until dedicated resolvers exist.
 - Vendored source, submodules, compiler toolchains, firmware, fonts, codecs, generated assets, binary payloads and final images require separate evidence/inventory; this initial tool does not certify them.
 - SPDX/Debian license expressions are classified conservatively for policy triggers, not fully parsed or legally interpreted. GPL/AGPL-only or required branches are REJECTED. An expression with a non-GPL/AGPL OR branch (for example GPL OR BSD or GPL OR LGPL) becomes NEEDS_REVIEW until a human explicitly selects an exact branch; the auditor never chooses an alternative. AND expressions that require GPL/AGPL remain REJECTED. Selecting LGPL still requires verified LGPL conditions and explicit approval.
 
