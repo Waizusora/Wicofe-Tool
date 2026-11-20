@@ -32,6 +32,26 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("NEEDS_REVIEW",
                          license_decision_status("Not-A-Real-License", approval))
 
+    def test_gradle_wrapper_lookup_uses_nearest_workspace_ancestor(self):
+        from audit_dependencies import find_gradle_wrapper
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            nested = workspace / "modules" / "app"
+            nested.mkdir(parents=True)
+            wrapper = workspace / "gradlew"
+            wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
+            self.assertEqual(wrapper, find_gradle_wrapper(workspace, nested))
+
+    def test_gradle_wrapper_lookup_does_not_escape_workspace(self):
+        from audit_dependencies import find_gradle_wrapper
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp)
+            workspace = parent / "checkout"
+            project = workspace / "module"
+            project.mkdir(parents=True)
+            (parent / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+            self.assertIsNone(find_gradle_wrapper(workspace, project))
+
     def test_gradle_native_resolution_graph_preserves_edges_and_configurations(self):
         from audit_dependencies import parse_gradle_resolution_graph
         graph = {
@@ -698,7 +718,7 @@ packages:
                 "org.example:library:2.4.1=runtimeClasspath\n", encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual(1, len(unresolved))
-            self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
+            self.assertIn("no repository Gradle wrapper", unresolved[0]["reason"])
             self.assertEqual(1, len(rows))
             self.assertEqual("gradle", rows[0]["ecosystem"])
             self.assertEqual("org.example:library", rows[0]["name"])
