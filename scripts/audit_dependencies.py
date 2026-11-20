@@ -1036,9 +1036,9 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 raise ValueError(
                     f"{project_path}:{config_name}: components and edges must be arrays"
                 )
-            if not isinstance(config_failures, list) or not isinstance(root_id, str) or not root_id:
+            if not isinstance(config_failures, list):
                 raise ValueError(
-                    f"{project_path}:{config_name}: missing rootComponent or failures array"
+                    f"{project_path}:{config_name}: failures must be an array"
                 )
 
             component_ids = set()
@@ -1048,6 +1048,12 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                         f"{project_path}:{config_name}: malformed component entry"
                     )
                 component_ids.add(component["id"])
+            if not isinstance(root_id, str) or not root_id:
+                if config_failures and not components and not edges:
+                    continue
+                raise ValueError(
+                    f"{project_path}:{config_name}: missing rootComponent without isolated resolution failure"
+                )
             if root_id not in component_ids:
                 raise ValueError(
                     f"{project_path}:{config_name}: root component is absent from components"
@@ -1076,6 +1082,12 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
             direct_ids = {
                 edge["to"] for edge in edges
                 if edge["from"] == root_id and not edge.get("constraint", False)
+            }
+            non_constraint_targets = {
+                edge["to"] for edge in edges if not edge.get("constraint", False)
+            }
+            constraint_targets = {
+                edge["to"] for edge in edges if edge.get("constraint", False)
             }
             edges_by_source: dict[str, list[dict[str, Any]]] = {}
             selection_edges_by_target: dict[str, list[dict[str, Any]]] = {}
@@ -1123,6 +1135,9 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 component_id = component["id"]
                 if component_id in direct_ids:
                     row["dependency_type"] = "direct"
+                elif (component_id in constraint_targets
+                      and component_id not in non_constraint_targets):
+                    row["dependency_type"] = "constraint"
                 row["edges"].extend(edges_by_source.get(component_id, []))
                 row["selection_edges"].extend(selection_edges_by_target.get(component_id, []))
 
@@ -1413,6 +1428,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                     record["gradle_configurations"] = package["configurations"]
                     record["gradle_projects"] = package["projects"]
                     record["gradle_edges"] = package["edges"]
+                    record["gradle_selection_edges"] = package["selection_edges"]
                     dependencies.append(record)
                 for failure in graph_failures:
                     unresolved.append({
