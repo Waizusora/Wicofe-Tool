@@ -37,6 +37,10 @@ def main() -> int:
         raise SystemExit("Gradle integration graph did not preserve dependency substitution")
     if by_name["org.apache.commons:commons-lang3"]["dependency_type"] != "direct":
         raise SystemExit("Gradle constraints incorrectly changed a selected direct dependency")
+    guava = by_name["com.google.guava:guava"]
+    if not any(edge.get("from") == "project :library"
+               for edge in guava["selection_edges"]):
+        raise SystemExit("Gradle integration graph lost the library-to-Guava project edge")
     if not any(row["variants"] for row in rows):
         raise SystemExit("Gradle integration graph contains no selected variant metadata")
     if not any(
