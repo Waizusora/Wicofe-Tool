@@ -498,6 +498,51 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual("locked", rows[0]["dependency_type"])
             self.assertEqual("UNKNOWN", rows[0]["status"])
 
+    def test_nix_flake_lock_resolves_reachable_nodes_and_nar_hashes(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "flake.nix").write_text("{ inputs.nixpkgs.url = \"github:NixOS/nixpkgs\"; }", encoding="utf-8")
+            (root / "flake.lock").write_text(json.dumps({
+                "root": "root",
+                "nodes": {
+                    "root": {"inputs": {"nixpkgs": "nixpkgs"}},
+                    "nixpkgs": {"original": {"id": "nixpkgs", "type": "github"},
+                                "locked": {"owner": "NixOS", "repo": "nixpkgs",
+                                           "rev": "abc123", "narHash": "sha256-fixture"},
+                                "inputs": {"flake-utils": "flake-utils"}},
+                    "flake-utils": {"original": {"id": "flake-utils"},
+                                    "locked": {"rev": "def456", "type": "github"}}
+                }}), encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            self.assertEqual({"nixpkgs", "flake-utils"}, {row["name"] for row in rows})
+            nixpkgs = next(row for row in rows if row["name"] == "nixpkgs")
+            self.assertEqual("abc123", nixpkgs["version"])
+            self.assertEqual("sha256-fixture", nixpkgs["checksum"])
+            self.assertEqual("direct", nixpkgs["dependency_type"])
+            self.assertEqual("transitive", next(row for row in rows if row["name"] == "flake-utils")["dependency_type"])
+            self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
+
+    def test_maven_tgf_parser_preserves_direct_and_transitive_edges(self):
+        from audit_dependencies import parse_maven_tgf
+        graph = parse_maven_tgf(
+            "0 [org.example:app:jar:1.0:compile]\\n"
+            "1 [org.example:direct:jar:2.0:compile]\\n"
+            "2 [org.example:transitive:jar:3.0:runtime]\\n"
+            "#\\n0 1\\n1 2\\n")
+        self.assertEqual([
+            {"name": "org.example:direct", "version": "2.0", "dependency_type": "direct"},
+            {"name": "org.example:transitive", "version": "3.0", "dependency_type": "transitive"},
+        ], graph)
+
+    def test_maven_tgf_parser_rejects_malformed_graphs(self):
+        from audit_dependencies import parse_maven_tgf
+        with self.assertRaises(ValueError):
+            parse_maven_tgf("not-a-node\\n")
+        with self.assertRaises(ValueError):
+            parse_maven_tgf("0 [org.example:app:jar:1.0:compile]\\n#\\n0 9\\n")
+
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
