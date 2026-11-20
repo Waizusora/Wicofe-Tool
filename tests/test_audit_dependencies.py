@@ -852,6 +852,52 @@ packages:
             self.assertEqual("app/gradle.lockfile", by_name["org.example:shared"]["source"])
             self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
 
+    def test_gradle_partial_native_graph_reconciles_lockfile_fallback(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "settings.gradle.kts").write_text(
+                'rootProject.name = "fixture"\n', encoding="utf-8")
+            (root / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
+            (root / "gradle.lockfile").write_text(
+                "org.example:native-lib:1.0=runtimeClasspath,testRuntimeClasspath\n"
+                "org.example:lock-only:2.0=testRuntimeClasspath\n",
+                encoding="utf-8")
+            wrapper = root / "gradlew"
+            wrapper.write_text(
+                "#!/bin/sh\n"
+                "for arg in \"$@\"; do\n"
+                "  case \"$arg\" in -PwicofeDependencyGraphOutput=*) output=\"${arg#*=}\" ;; esac\n"
+                "done\n"
+                "cat > \"$output\" <<'GRAPH'\n"
+                "{\"schemaVersion\":1,\"projects\":[{\"path\":\":\",\"configurations\":["
+                "{\"name\":\"runtimeClasspath\",\"rootComponent\":\"root\","
+                "\"components\":[{\"id\":\"root\",\"kind\":\"project\"},"
+                "{\"id\":\"org.example:native-lib:1.0\",\"kind\":\"module\","
+                "\"group\":\"org.example\",\"module\":\"native-lib\",\"version\":\"1.0\"}],"
+                "\"edges\":[{\"from\":\"root\",\"to\":\"org.example:native-lib:1.0\","
+                "\"requested\":\"org.example:native-lib:1.0\"}],\"failures\":[]},"
+                "{\"name\":\"testRuntimeClasspath\",\"rootComponent\":null,"
+                "\"components\":[],\"edges\":[],\"failures\":[{\"reason\":\"test resolution failed\"}]}]}]}\n"
+                "GRAPH\n"
+                "exit 0\n",
+                encoding="utf-8")
+            wrapper.chmod(0o755)
+
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual(1, len(unresolved))
+            by_name = {row["name"]: row for row in rows}
+            self.assertEqual({"org.example:native-lib", "org.example:lock-only"},
+                             set(by_name))
+            native = by_name["org.example:native-lib"]
+            self.assertEqual(["runtimeClasspath"], native["gradle_configurations"])
+            self.assertEqual(["runtimeClasspath", "testRuntimeClasspath"],
+                             native["gradle_lockfile_configurations"])
+            self.assertEqual("lockfile_partial_fallback",
+                             by_name["org.example:lock-only"]["gradle_resolution_source"])
+            self.assertEqual(["testRuntimeClasspath"],
+                             by_name["org.example:lock-only"]["gradle_configurations"])
+
     def test_gradle_lockfile_rejects_malformed_coordinates(self):
         from audit_dependencies import parse_gradle_lockfile
         with self.assertRaises(ValueError):
