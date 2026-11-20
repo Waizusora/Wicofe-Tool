@@ -991,6 +991,24 @@ def parse_gradle_resolution_features(content: str) -> list[str]:
     return [label for label, pattern in patterns if pattern.search(content)]
 
 
+
+def find_gradle_wrapper(workspace: Path, project_root: Path) -> Path | None:
+    """Find the nearest checked-in wrapper without escaping the audited workspace."""
+    wrapper_name = "gradlew.bat" if sys.platform == "win32" else "gradlew"
+    for candidate_root in (project_root, *project_root.parents):
+        try:
+            candidate_root.relative_to(workspace)
+        except ValueError:
+            continue
+        wrapper = candidate_root / wrapper_name
+        if wrapper.is_file():
+            return wrapper
+        if candidate_root == workspace:
+            break
+    return None
+
+
+
 def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], list[str]]:
     """Parse and validate the versioned JSON export produced by the Gradle init script."""
     data = json.loads(content)
@@ -1334,14 +1352,14 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     native_gradle_roots: set[Path] = set()
     for root in selected_gradle_roots:
         relative_root = str(root.relative_to(workspace)) or "."
-        wrapper = root / ("gradlew.bat" if sys.platform == "win32" else "gradlew")
-        # Use only the repository wrapper: it pins the Gradle distribution and
-        # avoids machine-dependent system Gradle versions.
-        gradle_command = [str(wrapper)] if wrapper.is_file() else []
+        # Use the nearest repository wrapper: it pins the Gradle distribution
+        # and avoids machine-dependent system Gradle versions.
+        wrapper = find_gradle_wrapper(workspace, root)
+        gradle_command = [str(wrapper)] if wrapper else []
         if not gradle_command:
             unresolved.append({
                 "path": relative_root, "ecosystem": "gradle",
-                "reason": "native Gradle graph unavailable: no Gradle wrapper or gradle executable; lockfile evidence is partial",
+                "reason": "native Gradle graph unavailable: no repository Gradle wrapper at project root or its ancestors; lockfile evidence is partial",
             })
             continue
         try:
