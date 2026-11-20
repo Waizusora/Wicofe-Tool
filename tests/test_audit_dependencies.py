@@ -67,6 +67,41 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["requested"])
 
+    def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath", "rootComponent": "project :app",
+                    "components": [], "edges": [], "failures": [],
+                }],
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "root component is absent"):
+            parse_gradle_resolution_graph(json.dumps(graph))
+
+    def test_gradle_native_resolution_graph_rejects_dangling_edge(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath", "rootComponent": "project :app",
+                    "components": [{"id": "project :app", "kind": "project"}],
+                    "edges": [{
+                        "from": "project :app", "to": "missing",
+                        "requested": "org.example:missing:1.0",
+                    }],
+                    "failures": [],
+                }],
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "unknown component"):
+            parse_gradle_resolution_graph(json.dumps(graph))
+
     def test_gradle_native_resolution_graph_rejects_unknown_schema(self):
         from audit_dependencies import parse_gradle_resolution_graph
         with self.assertRaises(ValueError):
