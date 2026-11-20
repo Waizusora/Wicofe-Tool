@@ -992,35 +992,80 @@ def parse_gradle_resolution_features(content: str) -> list[str]:
 
 
 def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], list[str]]:
-    """Parse the versioned JSON export produced by the Gradle init script."""
+    """Parse and validate the versioned JSON export produced by the Gradle init script."""
     data = json.loads(content)
-    if data.get("schemaVersion") != 1 or not isinstance(data.get("projects"), list):
+    if not isinstance(data, dict) or data.get("schemaVersion") != 1:
         raise ValueError("unsupported Gradle resolution graph schema")
+    projects = data.get("projects")
+    if not isinstance(projects, list):
+        raise ValueError("Gradle resolution graph projects must be an array")
 
     packages: dict[tuple[str, str, str], dict[str, Any]] = {}
     failures: list[str] = []
-    for project in data["projects"]:
+    for project in projects:
+        if not isinstance(project, dict) or not isinstance(project.get("configurations"), list):
+            raise ValueError("Gradle graph project must contain a configurations array")
         project_path = str(project.get("path", ":"))
-        for configuration in project.get("configurations", []):
+        for configuration in project["configurations"]:
+            if not isinstance(configuration, dict):
+                raise ValueError("Gradle graph configuration must be an object")
             config_name = str(configuration.get("name", "UNKNOWN"))
-            for failure in configuration.get("failures", []):
+            components = configuration.get("components")
+            edges = configuration.get("edges")
+            config_failures = configuration.get("failures")
+            root_id = configuration.get("rootComponent")
+            if not isinstance(components, list) or not isinstance(edges, list):
+                raise ValueError(
+                    f"{project_path}:{config_name}: components and edges must be arrays"
+                )
+            if not isinstance(config_failures, list) or not isinstance(root_id, str) or not root_id:
+                raise ValueError(
+                    f"{project_path}:{config_name}: missing rootComponent or failures array"
+                )
+
+            component_ids = set()
+            for component in components:
+                if not isinstance(component, dict) or not isinstance(component.get("id"), str):
+                    raise ValueError(
+                        f"{project_path}:{config_name}: malformed component entry"
+                    )
+                component_ids.add(component["id"])
+            if root_id not in component_ids:
+                raise ValueError(
+                    f"{project_path}:{config_name}: root component is absent from components"
+                )
+
+            for edge in edges:
+                if not isinstance(edge, dict):
+                    raise ValueError(f"{project_path}:{config_name}: malformed dependency edge")
+                source_id, target_id = edge.get("from"), edge.get("to")
+                if source_id not in component_ids or target_id not in component_ids:
+                    raise ValueError(
+                        f"{project_path}:{config_name}: dependency edge references unknown component"
+                    )
+                if not isinstance(edge.get("requested"), str):
+                    raise ValueError(
+                        f"{project_path}:{config_name}: dependency edge lacks requested selector"
+                    )
+
+            for failure in config_failures:
+                if not isinstance(failure, dict):
+                    raise ValueError(f"{project_path}:{config_name}: malformed failure entry")
                 failures.append(
                     f"{project_path}:{config_name}: "
                     f"{failure.get('reason', 'unresolved Gradle dependency')}"
                 )
-            root_id = configuration.get("rootComponent")
             direct_ids = {
-                edge.get("to") for edge in configuration.get("edges", [])
-                if edge.get("from") == root_id
+                edge["to"] for edge in edges if edge["from"] == root_id
             }
             edges_by_source: dict[str, list[dict[str, Any]]] = {}
-            for edge in configuration.get("edges", []):
-                edges_by_source.setdefault(str(edge.get("from")), []).append({
-                    "to": edge.get("to"),
-                    "requested": edge.get("requested"),
+            for edge in edges:
+                edges_by_source.setdefault(edge["from"], []).append({
+                    "to": edge["to"],
+                    "requested": edge["requested"],
                     "constraint": bool(edge.get("constraint", False)),
                 })
-            for component in configuration.get("components", []):
+            for component in components:
                 if component.get("kind") != "module":
                     continue
                 group, module, version = (
@@ -1028,10 +1073,9 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                     component.get("version"),
                 )
                 if not group or not module or not version:
-                    failures.append(
+                    raise ValueError(
                         f"{project_path}:{config_name}: module component lacks group/module/version"
                     )
-                    continue
                 key = (str(group), str(module), str(version))
                 row = packages.setdefault(key, {
                     "name": f"{group}:{module}", "version": str(version),
@@ -1040,7 +1084,7 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 })
                 row["configurations"].add(config_name)
                 row["projects"].add(project_path)
-                component_id = str(component.get("id"))
+                component_id = component["id"]
                 if component_id in direct_ids:
                     row["dependency_type"] = "direct"
                 row["edges"].extend(edges_by_source.get(component_id, []))
@@ -1055,7 +1099,6 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
             "edges": row["edges"],
         })
     return rows, failures
-
 
 
 def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
