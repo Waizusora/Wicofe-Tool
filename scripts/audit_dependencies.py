@@ -466,6 +466,177 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     return found
 
 
+
+def _resolved_dependency_record(ecosystem: str, name: str, version: str,
+                               repository: str, decisions: dict[str, dict[str, Any]],
+                               upstream_evidence: dict[str, dict[str, Any]],
+                               dependency_type: str = "transitive",
+                               source: str | None = None,
+                               checksum: str | None = None) -> dict[str, Any]:
+    """Normalize resolver output; resolution never substitutes for license approval."""
+    key = f"{ecosystem}:{name}:{version}"
+    evidence_record = upstream_evidence.get(key, {})
+    decision = decisions.get(key)
+    license_expr = evidence_record.get("license")
+    evidence = [{"kind": f"{ecosystem}_resolver", "source": source,
+                 "checksum": checksum}]
+    evidence.extend(evidence_record.get("license_evidence", []))
+    return {
+        "repository": repository, "ecosystem": ecosystem, "name": name,
+        "version": version, "package_id": key, "source": source,
+        "source_commit": evidence_record.get("source_commit"),
+        "source_revision": evidence_record.get("source_revision"),
+        "upstream_url": evidence_record.get("upstream_url"),
+        "checksum": checksum, "license": license_expr,
+        "license_category": classify_license(license_expr),
+        "license_evidence": evidence, "dependency_type": dependency_type,
+        "enabled_features": [], "status": license_decision_status(license_expr, decision),
+        "distribution": "not established by dependency resolution",
+        "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+        "decision": decision,
+    }
+
+
+def _decode_concatenated_json(content: str) -> list[dict[str, Any]]:
+    """Decode Go's stream of adjacent JSON objects."""
+    decoder = json.JSONDecoder()
+    values = []
+    offset = 0
+    while offset < len(content):
+        while offset < len(content) and content[offset].isspace():
+            offset += 1
+        if offset >= len(content):
+            break
+        value, offset = decoder.raw_decode(content, offset)
+        if isinstance(value, dict):
+            values.append(value)
+    return values
+
+
+def resolve_non_cargo_manifests(workspace: Path, repository: str,
+                                decisions: dict[str, dict[str, Any]],
+                                upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Resolve supported ecosystems using native lockfiles/tooling; retain explicit gaps."""
+    import tempfile
+    dependencies: list[dict[str, Any]] = []
+    unresolved: list[dict[str, str]] = []
+    manifests = scan_manifests(workspace, repository)
+    paths = {item["path"]: item["ecosystem"] for item in manifests}
+
+    # npm lockfile v2/v3 contains the complete package graph and exact versions.
+    for relative, ecosystem in paths.items():
+        if ecosystem != "npm-lock":
+            continue
+        path = workspace / relative
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            packages = data.get("packages")
+            if not isinstance(packages, dict):
+                raise ValueError("only npm package-lock v2/v3 is supported")
+            root_package = packages.get("", {})
+            direct_names = set(root_package.get("dependencies", {})) | set(root_package.get("devDependencies", {}))
+            for package_path, package in sorted(packages.items()):
+                if not package_path or not package_path.startswith("node_modules/"):
+                    continue
+                name = package.get("name")
+                if not name:
+                    suffix = package_path.split("node_modules/")[-1]
+                    name = suffix if not suffix.startswith("@") else "/".join(suffix.split("/")[:2])
+                version = package.get("version")
+                if not version:
+                    unresolved.append({"path": relative, "ecosystem": ecosystem,
+                                       "reason": f"package {name} has no locked version"})
+                    continue
+                source = package.get("resolved")
+                integrity = package.get("integrity")
+                direct = name in direct_names and package_path.count("node_modules/") == 1
+                dependencies.append(_resolved_dependency_record(
+                    "npm", name, str(version), repository, decisions, upstream_evidence,
+                    "direct" if direct else "transitive", source, integrity))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": ecosystem, "reason": str(exc)})
+
+    # Python requirements are resolved by pip's non-installing dry-run report.
+    requirement_paths = [(workspace / p) for p, e in paths.items()
+                         if e == "python-requirements"]
+    for path in requirement_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            with tempfile.TemporaryDirectory(prefix="wicofe-pip-audit-") as tmp:
+                report_path = Path(tmp) / "pip-report.json"
+                command = [sys.executable, "-m", "pip", "install", "--dry-run",
+                           "--ignore-installed", "--disable-pip-version-check",
+                           "--report", str(report_path), "-r", str(path)]
+                result = subprocess.run(command, cwd=workspace, capture_output=True,
+                                        text=True, timeout=600)
+                if result.returncode != 0:
+                    raise RuntimeError((result.stderr or result.stdout).strip()[-2000:])
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                for item in report.get("install", []):
+                    metadata = item.get("metadata", {})
+                    name, version = metadata.get("name"), metadata.get("version")
+                    if not name or not version:
+                        unresolved.append({"path": relative, "ecosystem": "python",
+                                           "reason": "pip report entry lacks name/version"})
+                        continue
+                    download = item.get("download_info", {})
+                    archive = download.get("archive_info", {})
+                    hashes = archive.get("hashes", {})
+                    checksum = hashes.get("sha256")
+                    dependencies.append(_resolved_dependency_record(
+                        "python", name, str(version), repository, decisions, upstream_evidence,
+                        "direct" if item.get("is_direct") else "transitive",
+                        download.get("url"), checksum))
+        except (OSError, UnicodeError, json.JSONDecodeError, subprocess.SubprocessError,
+                RuntimeError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "python",
+                               "reason": f"pip resolver failed: {exc}"})
+
+    # Go's module graph is emitted as concatenated JSON objects.
+    go_manifests = [p for p, e in paths.items() if e == "go"]
+    for relative in go_manifests:
+        try:
+            result = subprocess.run(["go", "list", "-m", "-json", "all"],
+                                    cwd=(workspace / relative).parent,
+                                    capture_output=True, text=True, timeout=600)
+            if result.returncode != 0:
+                raise RuntimeError((result.stderr or result.stdout).strip()[-2000:])
+            for module in _decode_concatenated_json(result.stdout):
+                name, version = module.get("Path"), module.get("Version")
+                if not name or not version:
+                    continue
+                replacement = module.get("Replace") or {}
+                source = replacement.get("Dir") or replacement.get("Path") or name
+                dependencies.append(_resolved_dependency_record(
+                    "go", name, str(version), repository, decisions, upstream_evidence,
+                    "direct" if module.get("Main") else "transitive", source,
+                    (module.get("Sum") or None)))
+        except (OSError, UnicodeError, subprocess.SubprocessError, RuntimeError,
+                json.JSONDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "go",
+                               "reason": f"go module resolver failed: {exc}"})
+
+    # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
+    handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
+               "python-requirements", "python-constraints", "go", "go-lock", "go-workspace"}
+    npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
+    go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
+    requirement_dirs = {(workspace / p).parent for p, e in paths.items()
+                        if e == "python-requirements"}
+    for relative, ecosystem in paths.items():
+        path = workspace / relative
+        if ecosystem in handled:
+            if ecosystem == "python-constraints" and path.parent in requirement_dirs:
+                continue
+            if ecosystem == "go-lock" and path.parent in go_dirs:
+                continue
+            continue
+        if ecosystem == "npm" and path.parent in npm_lock_dirs:
+            continue
+        unresolved.append({"path": relative, "ecosystem": ecosystem,
+                           "reason": "no native resolver adapter is implemented yet"})
+    return dependencies, unresolved
+
 def scan_rust_toolchain(workspace: Path, repository: str,
                         decisions: dict[str, dict[str, Any]],
                         upstream_evidence: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1008,6 +1179,9 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
+        non_cargo_dependencies, non_cargo_unresolved = resolve_non_cargo_manifests(
+            workspace, repository, decisions, upstream_evidence)
+        dependencies.extend(non_cargo_dependencies)
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
         dependencies.extend(build_dependencies)
         dependencies.extend(scan_rust_toolchain(workspace, repository, decisions, upstream_evidence))
@@ -1023,9 +1197,11 @@ def main(argv: list[str] | None = None) -> int:
         for item in dependencies:
             statuses[item["status"]] = statuses.get(item["status"], 0) + 1
         cargo_manifest_count = sum(m["ecosystem"] == "cargo" for m in manifests)
-        unresolved = [m for m in manifests if m["ecosystem"] not in {"cargo", "cargo-lock", "rust-toolchain"}]
+        unresolved = list(non_cargo_unresolved)
         if len(metadata_paths) < cargo_manifest_count:
-            unresolved.extend(m for m in manifests if m["ecosystem"] == "cargo")
+            unresolved.extend({"path": m["path"], "ecosystem": m["ecosystem"],
+                               "reason": "Cargo metadata was not supplied"}
+                              for m in manifests if m["ecosystem"] == "cargo")
         if not manifests:
             coverage_status = "REVIEWED_NO_DEPENDENCIES" if coverage_decision else "UNKNOWN"
         elif unresolved:
