@@ -43,6 +43,35 @@ class RepositoryDocsValidatorTests(unittest.TestCase):
         findings = scan_markdown_file(path, self.root, [])
         self.assertEqual(["BROKEN_ANCHOR"], [item.code for item in findings])
 
+    def test_cross_repository_github_link_and_heading(self) -> None:
+        (self.root / "Other" / "docs").mkdir()
+        (self.root / "Other" / "docs" / "guide.md").write_text(
+            "# Guide\\n\\n## Setup\\n", encoding="utf-8"
+        )
+        path = self.root / "Repo" / "README.md"
+        path.write_text(
+            "[Cross-repo guide](https://github.com/Waizusora/Other/blob/main/docs/guide.md#setup)\\n",
+            encoding="utf-8",
+        )
+        findings = scan_markdown_file(path, self.root, [])
+        self.assertEqual([], findings)
+
+    def test_missing_cross_repository_github_target_is_reported(self) -> None:
+        path = self.root / "Repo" / "README.md"
+        path.write_text(
+            "[Missing](https://github.com/Waizusora/Other/blob/main/docs/missing.md)\\n",
+            encoding="utf-8",
+        )
+        findings = scan_markdown_file(path, self.root, [])
+        self.assertEqual(["BROKEN_LINK"], [item.code for item in findings])
+
+    def test_github_repository_link_requires_checkout(self) -> None:
+        path = self.root / "Repo" / "README.md"
+        path.write_text("[Other](https://github.com/Waizusora/NotCheckedOut)\\n",
+                        encoding="utf-8")
+        findings = scan_markdown_file(path, self.root, [])
+        self.assertEqual(["BROKEN_LINK"], [item.code for item in findings])
+
     def test_forbidden_term_is_case_insensitive(self) -> None:
         path = self.root / "Repo" / "README.md"
         path.write_text("Legacy package: mypk\n", encoding="utf-8")
