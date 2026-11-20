@@ -427,6 +427,22 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual("UNKNOWN", rows[0]["status"])
             self.assertEqual("sha512-fixture", rows[0]["checksum"])
 
+    def test_upstream_license_evidence_is_not_an_approval_for_resolved_npm(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "package-lock.json").write_text(json.dumps({
+                "lockfileVersion": 3,
+                "packages": {"": {}, "node_modules/sample": {"version": "1.0.0"}}
+            }), encoding="utf-8")
+            key = "npm:sample:1.0.0"
+            evidence = {key: {"license": "MIT", "source_commit": "a" * 40,
+                              "upstream_url": "https://example.invalid/sample",
+                              "license_evidence": [{"url": "https://example.invalid/LICENSE"}]}}
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, evidence)
+            self.assertEqual([], unresolved)
+            self.assertEqual("NEEDS_REVIEW", rows[0]["status"])
+
     def test_npm_lock_does_not_infer_license_from_lockfile(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
