@@ -18,6 +18,7 @@ gradle.rootProject { root ->
                 project.configurations.findAll { it.canBeResolved }.sort { it.name }.each { configuration ->
                     def entry = [
                         name: configuration.name,
+                        rootComponent: null,
                         components: [],
                         edges: [],
                         failures: []
@@ -25,6 +26,7 @@ gradle.rootProject { root ->
                     try {
                         def resolution = configuration.incoming.resolutionResult
                         def rootComponent = resolution.root
+                        entry.rootComponent = rootComponent.id.displayName
                         def queue = [rootComponent]
                         def visited = [] as Set
                         def componentMap = [:]
