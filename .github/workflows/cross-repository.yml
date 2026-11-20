@@ -30,6 +30,8 @@ jobs:
             [ -n "$repo" ] || continue
             git clone --depth 1 "https://github.com/Waizusora/$repo.git" "workspace/$repo"
           done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tool/config/repositories.json", encoding="utf-8"))["repositories"]))')
+      - name: Validate Markdown links across repository workspace
+        run: python Wicofe-Tool/scripts/validate_repository_docs.py workspace
       - name: Validate repository baseline
         run: >-
           python Wicofe-Tool/scripts/check_repository_matrix.py
