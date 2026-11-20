@@ -23,3 +23,31 @@ jobs:
         run: python -m py_compile scripts/check_project_metadata.py tests/test_check_project_metadata.py
       - name: Run tests
         run: python -m unittest discover -s tests -v
+
+  gradle-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Java
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Export real Gradle dependency graph
+        run: >-
+          gradle --no-daemon
+          -p tests/fixtures/gradle-integration
+          -I scripts/gradle_dependency_graph.init.gradle
+          -PwicofeDependencyGraphOutput=/tmp/gradle-dependency-graph.json
+          wicofeExportGradleDependencyGraph
+      - name: Validate Gradle graph and variant metadata
+        env:
+          PYTHONPATH: scripts
+        run: python scripts/check_gradle_integration.py /tmp/gradle-dependency-graph.json
