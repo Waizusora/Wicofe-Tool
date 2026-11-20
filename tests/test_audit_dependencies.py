@@ -286,8 +286,8 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "ci.yml").write_text(
                 "jobs:\n  build:\n    runs-on: ubuntu-26.04\n    steps:\n"
                 "      - run: |\n          sudo apt-get update\n"
-                "          sudo apt-get install --yes \\n"
-                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\n"
+                "          sudo apt-get install --yes \\\n"
+                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\\n"
                 "            xorriso=1:1.5.6-1.1ubuntu4\n", encoding="utf-8")
             scripts, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, {})
             packages = [item for item in dependencies if item["ecosystem"] == "system-package"]
