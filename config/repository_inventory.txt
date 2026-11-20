@@ -10,7 +10,7 @@ Wicofe-Driver
 Wicofe-Storage
 ONWFS
 Wicofe-Lib
-Wicofe-Libc
+WLibc
 Frenit
 Wicofe-Service
 Wicofe-Network
