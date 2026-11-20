@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import shlex
 import sys
 import subprocess
@@ -990,6 +991,74 @@ def parse_gradle_resolution_features(content: str) -> list[str]:
     )
     return [label for label, pattern in patterns if pattern.search(content)]
 
+
+def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """Parse the versioned JSON export produced by the Gradle init script."""
+    data = json.loads(content)
+    if data.get("schemaVersion") != 1 or not isinstance(data.get("projects"), list):
+        raise ValueError("unsupported Gradle resolution graph schema")
+
+    packages: dict[tuple[str, str, str], dict[str, Any]] = {}
+    failures: list[str] = []
+    for project in data["projects"]:
+        project_path = str(project.get("path", ":"))
+        for configuration in project.get("configurations", []):
+            config_name = str(configuration.get("name", "UNKNOWN"))
+            for failure in configuration.get("failures", []):
+                failures.append(
+                    f"{project_path}:{config_name}: "
+                    f"{failure.get('reason', 'unresolved Gradle dependency')}"
+                )
+            root_id = configuration.get("rootComponent")
+            direct_ids = {
+                edge.get("to") for edge in configuration.get("edges", [])
+                if edge.get("from") == root_id
+            }
+            edges_by_target: dict[str, list[dict[str, Any]]] = {}
+            for edge in configuration.get("edges", []):
+                edges_by_target.setdefault(str(edge.get("to")), []).append({
+                    "from": edge.get("from"),
+                    "requested": edge.get("requested"),
+                    "constraint": bool(edge.get("constraint", False)),
+                })
+            for component in configuration.get("components", []):
+                if component.get("kind") != "module":
+                    continue
+                group, module, version = (
+                    component.get("group"), component.get("module"),
+                    component.get("version"),
+                )
+                if not group or not module or not version:
+                    failures.append(
+                        f"{project_path}:{config_name}: module component lacks group/module/version"
+                    )
+                    continue
+                key = (str(group), str(module), str(version))
+                row = packages.setdefault(key, {
+                    "name": f"{group}:{module}", "version": str(version),
+                    "configurations": set(), "projects": set(),
+                    "dependency_type": "transitive", "edges": [],
+                })
+                row["configurations"].add(config_name)
+                row["projects"].add(project_path)
+                component_id = str(component.get("id"))
+                if component_id in direct_ids:
+                    row["dependency_type"] = "direct"
+                row["edges"].extend(edges_by_target.get(component_id, []))
+
+    rows = []
+    for key, row in sorted(packages.items()):
+        rows.append({
+            "name": row["name"], "version": row["version"],
+            "configurations": sorted(row["configurations"]),
+            "projects": sorted(row["projects"]),
+            "dependency_type": row["dependency_type"],
+            "edges": row["edges"],
+        })
+    return rows, failures
+
+
+
 def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
     """Read Gradle version-catalog library/plugin declarations, not resolved artifacts."""
     data = tomllib.loads(content)
@@ -1205,9 +1274,79 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "python",
                                "reason": f"pip resolver failed: {exc}"})
 
-    # Gradle lockfiles are project-scoped; preserve configuration coverage per module.
+    # Prefer a native Gradle resolution graph; lockfiles remain a partial fallback.
+    gradle_manifest_paths = [p for p, e in paths.items()
+                             if e == "gradle" and Path(p).name in {
+                                 "build.gradle", "build.gradle.kts",
+                                 "settings.gradle", "settings.gradle.kts"}]
+    gradle_roots = sorted({
+        (workspace / relative).parent
+        for relative in gradle_manifest_paths
+    }, key=lambda item: (len(item.parts), str(item)))
+    selected_gradle_roots: list[Path] = []
+    for candidate in gradle_roots:
+        if not any(parent == candidate or parent in candidate.parents
+                   for parent in selected_gradle_roots):
+            selected_gradle_roots.append(candidate)
+
+    native_gradle_roots: set[Path] = set()
+    for root in selected_gradle_roots:
+        relative_root = str(root.relative_to(workspace)) or "."
+        wrapper = root / ("gradlew.bat" if sys.platform == "win32" else "gradlew")
+        gradle_command = [str(wrapper)] if wrapper.is_file() else (
+            [shutil.which("gradle")] if shutil.which("gradle") else []
+        )
+        if not gradle_command:
+            unresolved.append({
+                "path": relative_root, "ecosystem": "gradle",
+                "reason": "native Gradle graph unavailable: no Gradle wrapper or gradle executable; lockfile evidence is partial",
+            })
+            continue
+        try:
+            with tempfile.TemporaryDirectory(prefix="wicofe-gradle-audit-") as tmp:
+                output_path = Path(tmp) / "gradle-resolution-graph.json"
+                init_script = Path(__file__).resolve().with_name(
+                    "gradle_dependency_graph.init.gradle")
+                command = [
+                    *gradle_command, "--no-daemon", "--console=plain",
+                    "--init-script", str(init_script),
+                    "wicofeExportGradleDependencyGraph",
+                    f"-PwicofeDependencyGraphOutput={output_path}",
+                ]
+                result = subprocess.run(
+                    command, cwd=root, capture_output=True, text=True, timeout=900
+                )
+                if result.returncode != 0:
+                    raise RuntimeError((result.stderr or result.stdout).strip()[-3000:])
+                graph_rows, graph_failures = parse_gradle_resolution_graph(
+                    output_path.read_text(encoding="utf-8"))
+                for package in graph_rows:
+                    record = _resolved_dependency_record(
+                        "gradle", package["name"], package["version"], repository,
+                        decisions, upstream_evidence, package["dependency_type"],
+                        f"gradle-native:{relative_root}", None)
+                    record["gradle_configurations"] = package["configurations"]
+                    record["gradle_projects"] = package["projects"]
+                    record["gradle_edges"] = package["edges"]
+                    dependencies.append(record)
+                for failure in graph_failures:
+                    unresolved.append({
+                        "path": relative_root, "ecosystem": "gradle",
+                        "reason": f"Gradle native graph incomplete: {failure}",
+                    })
+                native_gradle_roots.add(root)
+        except (OSError, UnicodeError, json.JSONDecodeError,
+                subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+            unresolved.append({
+                "path": relative_root, "ecosystem": "gradle",
+                "reason": f"Gradle native resolver failed: {exc}",
+            })
+
+    # Preserve project-scoped lockfile evidence where no native model was captured.
     gradle_lock_paths = [(workspace / p) for p, e in paths.items() if e == "gradle-lock"]
     for path in gradle_lock_paths:
+        if any(root == path.parent or root in path.parents for root in native_gradle_roots):
+            continue
         relative = str(path.relative_to(workspace))
         try:
             for package in parse_gradle_lockfile(path.read_text(encoding="utf-8")):
