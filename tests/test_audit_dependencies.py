@@ -630,6 +630,59 @@ packages:
             self.assertEqual("locked", rows[0]["dependency_type"])
             self.assertEqual("UNKNOWN", rows[0]["status"])
 
+    def test_gradle_lockfile_merges_configurations_and_accepts_empty_sentinel(self):
+        from audit_dependencies import parse_gradle_lockfile
+        rows = parse_gradle_lockfile(
+            "# lock state\n"
+            "org.example:shared:1.2.3=compileClasspath,runtimeClasspath\n"
+            "org.example:shared:1.2.3=testRuntimeClasspath\n"
+            "empty=\n"
+        )
+        self.assertEqual(1, len(rows))
+        self.assertEqual("org.example:shared", rows[0]["name"])
+        self.assertEqual("1.2.3", rows[0]["version"])
+        self.assertEqual(
+            "compileClasspath,runtimeClasspath,testRuntimeClasspath",
+            rows[0]["configurations"],
+        )
+
+    def test_gradle_multi_project_resolves_root_and_subproject_lockfiles(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = root / "app"
+            app.mkdir()
+            (root / "settings.gradle.kts").write_text(
+                'rootProject.name = "fixture"\ninclude(":app")\n', encoding="utf-8")
+            (root / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
+            (root / "gradle.lockfile").write_text(
+                "org.example:root-lib:1.0=compileClasspath,runtimeClasspath\n",
+                encoding="utf-8")
+            (app / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
+            (app / "gradle.lockfile").write_text(
+                "org.example:app-lib:2.0=debugRuntimeClasspath,releaseRuntimeClasspath\n"
+                "org.example:shared:3.0=compileClasspath\n"
+                "org.example:shared:3.0=testRuntimeClasspath\n",
+                encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            by_name = {row["name"]: row for row in rows}
+            self.assertEqual({"org.example:root-lib", "org.example:app-lib",
+                              "org.example:shared"}, set(by_name))
+            self.assertEqual(["compileClasspath", "runtimeClasspath"],
+                             by_name["org.example:root-lib"]["gradle_configurations"])
+            self.assertEqual(["debugRuntimeClasspath", "releaseRuntimeClasspath"],
+                             by_name["org.example:app-lib"]["gradle_configurations"])
+            self.assertEqual(["compileClasspath", "testRuntimeClasspath"],
+                             by_name["org.example:shared"]["gradle_configurations"])
+            self.assertEqual("app/gradle.lockfile", by_name["org.example:shared"]["source"])
+            self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
+
+    def test_gradle_lockfile_rejects_malformed_coordinates(self):
+        from audit_dependencies import parse_gradle_lockfile
+        with self.assertRaises(ValueError):
+            parse_gradle_lockfile("org.example:missing-version=runtimeClasspath\n")
+
     def test_bazel_module_lock_resolves_reachable_direct_and_transitive_modules(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
