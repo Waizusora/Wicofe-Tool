@@ -4,7 +4,8 @@
 
 This report records the result of the 29-repository audit run
 [44710193967](https://github.com/Waizusora/Wicofe-Tool/actions/runs/44710193967)
-and the repository baseline checked in the same workflow.
+and the repository baseline checked in the same workflow. The diagnostic rerun is
+[44711616620](https://github.com/Waizusora/Wicofe-Tool/actions/runs/44711616620).
 
 The audit is technical evidence, not legal approval. No license, dependency,
 or distribution policy has been changed by this report.
@@ -92,9 +93,11 @@ The Wicofe-Kernel workflow installs pinned CI host packages including:
 - `xorriso=1:1.5.6-1.1ubuntu4` — upstream evidence records
   `GPL-2.0-or-later`.
 
-They are used by kernel CI for QEMU boot tests and ISO creation. They are
-identified as build-time host tools; the audit does not establish that either
-is included in the final Wicofe image. The current project policy still
+Both were identified at
+`.github/workflows/exception-double-fault-smoke.yml:23`. They are used by
+kernel CI for QEMU boot tests and ISO creation. They are identified as
+build-time host tools; the audit does not establish that either is included
+in the final Wicofe image. The current project policy still
 rejects GPL/AGPL records, so this distinction is evidence for a policy-owner
 decision, not an automatic exception or approval.
 
