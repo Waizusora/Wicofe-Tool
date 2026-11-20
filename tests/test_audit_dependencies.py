@@ -828,8 +828,10 @@ configurations.configureEach {
                 "org.example:lib:1.0=runtimeClasspath\n", encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual(1, len(rows))
-            finding = next(item for item in unresolved if item["ecosystem"] == "gradle")
-            self.assertIn("platform/BOM dependencies", finding["reason"])
+            gradle_findings = [item["reason"] for item in unresolved
+                               if item["ecosystem"] == "gradle"]
+            self.assertTrue(any("platform/BOM dependencies" in reason
+                                for reason in gradle_findings))
 
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
         from audit_dependencies import resolve_non_cargo_manifests
