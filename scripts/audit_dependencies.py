@@ -887,6 +887,60 @@ def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
     return rows
 
 
+def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
+    """Read Gradle version-catalog library/plugin declarations, not resolved artifacts."""
+    data = tomllib.loads(content)
+    versions = data.get("versions", {})
+    rows: list[dict[str, str]] = []
+
+    def version_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            if value.get("ref"):
+                ref = str(value["ref"])
+                target = versions.get(ref)
+                if isinstance(target, dict):
+                    return str(target.get("strictly") or target.get("require")
+                                or target.get("prefer") or f"version.ref:{ref}")
+                return str(target) if target is not None else f"version.ref:{ref}"
+            return str(value.get("strictly") or value.get("require")
+                        or value.get("prefer") or "UNSPECIFIED")
+        return "UNSPECIFIED"
+
+    for alias, value in sorted(data.get("libraries", {}).items()):
+        if isinstance(value, str):
+            parts = value.split(":")
+            if len(parts) != 3:
+                raise ValueError(f"invalid library coordinate for {alias}: {value}")
+            coordinate, version = ":".join(parts[:2]), parts[2]
+        elif isinstance(value, dict):
+            module = value.get("module")
+            if module:
+                coordinate = str(module)
+            elif value.get("group") and value.get("name"):
+                coordinate = f"{value['group']}:{value['name']}"
+            else:
+                raise ValueError(f"library {alias} has no module or group/name")
+            version = version_text(value.get("version", value.get("version.ref")))
+        else:
+            raise ValueError(f"unsupported library declaration for {alias}")
+        rows.append({"kind": "library", "alias": alias, "name": coordinate,
+                     "version": version, "source": "libs.versions.toml"})
+
+    for alias, value in sorted(data.get("plugins", {}).items()):
+        if isinstance(value, str):
+            plugin_id, version = value.split(":", 1) if ":" in value else (value, "UNSPECIFIED")
+        elif isinstance(value, dict) and value.get("id"):
+            plugin_id = str(value["id"])
+            version = version_text(value.get("version", value.get("version.ref")))
+        else:
+            raise ValueError(f"unsupported plugin declaration for {alias}")
+        rows.append({"kind": "plugin", "alias": alias, "name": plugin_id,
+                     "version": version, "source": "libs.versions.toml"})
+    return rows
+
+
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
                                 upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -1071,6 +1125,32 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "gradle",
                                "reason": f"cannot read Gradle lockfile: {exc}"})
 
+    # Gradle version catalogs are declarations; they do not prove usage or resolution.
+    for relative, ecosystem in paths.items():
+        if ecosystem != "gradle-version-catalog":
+            continue
+        try:
+            catalog = parse_gradle_version_catalog(
+                (workspace / relative).read_text(encoding="utf-8"))
+            for item in catalog:
+                key = f"gradle-catalog:{item['kind']}:{item['name']}:{item['version']}"
+                dependencies.append({
+                    "repository": repository, "ecosystem": "gradle-catalog",
+                    "name": item["name"], "version": item["version"],
+                    "package_id": key, "source": relative,
+                    "license": None, "license_category": "UNKNOWN",
+                    "license_evidence": [{"kind": "gradle-version-catalog-declaration",
+                                          "path": relative, "alias": item["alias"],
+                                          "declaration_kind": item["kind"]}],
+                    "dependency_type": "declared", "enabled_features": [],
+                    "status": "UNKNOWN",
+                    "distribution": "catalog declaration only; usage and resolved version not established",
+                    "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
+                })
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "gradle-version-catalog",
+                               "reason": f"Gradle version catalog parser failed: {exc}"})
+
     # Bzlmod lockfiles encode the resolved module dependency graph as JSON.
     bazel_lock_paths = [workspace / p for p, e in paths.items() if e == "bazel-lock"]
     bazel_lock_dirs = {path.parent for path in bazel_lock_paths}
@@ -1153,7 +1233,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock", "pnpm-lock", "yarn-lock",
-               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "nix-lock", "maven", "bazel-lock"}
+               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "gradle-version-catalog", "nix-lock", "maven", "bazel-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
