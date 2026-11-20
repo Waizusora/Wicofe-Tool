@@ -445,6 +445,22 @@ class LicenseAuditTests(unittest.TestCase):
             + json.dumps({"Path": "example.com/b", "Version": "v2.0.0"}))
         self.assertEqual(["example.com/a", "example.com/b"], [row["Path"] for row in rows])
 
+    def test_gradle_lockfile_resolves_modules_without_claiming_license(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "build.gradle.kts").write_text("plugins {}\\n", encoding="utf-8")
+            (root / "gradle.lockfile").write_text(
+                "org.example:library:2.4.1=runtimeClasspath\\n", encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            self.assertEqual(1, len(rows))
+            self.assertEqual("gradle", rows[0]["ecosystem"])
+            self.assertEqual("org.example:library", rows[0]["name"])
+            self.assertEqual("2.4.1", rows[0]["version"])
+            self.assertEqual("locked", rows[0]["dependency_type"])
+            self.assertEqual("UNKNOWN", rows[0]["status"])
+
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
