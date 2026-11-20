@@ -852,6 +852,32 @@ packages:
             self.assertEqual("app/gradle.lockfile", by_name["org.example:shared"]["source"])
             self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
 
+    def test_gradle_project_configuration_coverage_aggregates_partial_results(self):
+        from audit_dependencies import summarize_gradle_configuration_coverage
+        coverage = [
+            {"project": ":app", "configuration": "runtimeClasspath",
+             "status": "RESOLVED", "component_count": 4, "edge_count": 3,
+             "failure_reasons": []},
+            {"project": ":app", "configuration": "testRuntimeClasspath",
+             "status": "FAILED", "component_count": 0, "edge_count": 0,
+             "failure_reasons": ["repository unavailable"]},
+            {"project": ":lib", "configuration": "compileClasspath",
+             "status": "RESOLVED", "component_count": 2, "edge_count": 1,
+             "failure_reasons": []},
+        ]
+        self.assertEqual([
+            {"project": ":app", "status": "PARTIAL", "configuration_count": 2,
+             "resolved_count": 1, "failed_count": 1, "component_count": 4,
+             "edge_count": 3, "failure_reasons": ["repository unavailable"]},
+            {"project": ":lib", "status": "COMPLETE", "configuration_count": 1,
+             "resolved_count": 1, "failed_count": 0, "component_count": 2,
+             "edge_count": 1, "failure_reasons": []},
+        ], summarize_gradle_configuration_coverage(coverage))
+
+    def test_gradle_project_configuration_coverage_empty_input_is_empty(self):
+        from audit_dependencies import summarize_gradle_configuration_coverage
+        self.assertEqual([], summarize_gradle_configuration_coverage([]))
+
     def test_gradle_partial_native_graph_reconciles_lockfile_fallback(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
