@@ -23,10 +23,18 @@ def main() -> int:
     required = {
         "com.google.guava:guava",
         "org.junit.jupiter:junit-jupiter-api",
+        "org.apache.commons:commons-lang3",
     }
     missing = sorted(required - by_name.keys())
     if missing:
         raise SystemExit("Gradle integration graph is missing modules: " + ", ".join(missing))
+    substituted = by_name["org.apache.commons:commons-lang3"]
+    if not any(
+        "org.apache.commons:commons-text" in edge.get("requested", "")
+        and edge.get("selected", "").startswith("org.apache.commons:commons-lang3:")
+        for edge in substituted["edges"]
+    ):
+        raise SystemExit("Gradle integration graph did not preserve dependency substitution")
     if not any(row["variants"] for row in rows):
         raise SystemExit("Gradle integration graph contains no selected variant metadata")
     if not any(
