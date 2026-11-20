@@ -100,6 +100,8 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["selected"])
         self.assertEqual("runtime", by_name["org.example:direct"]["variants"][0]["displayName"])
+        self.assertEqual("org.example:direct:1.0",
+                         by_name["org.example:direct"]["selection_edges"][0]["requested"])
         self.assertTrue(any(
             edge.get("selected_variant", {}).get("displayName") == "runtime"
             for edge in by_name["org.example:direct"]["edges"]
