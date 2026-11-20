@@ -68,10 +68,13 @@ license approval separate from graph resolution:
 - **npm:** package-lock v2/v3 package graph, exact versions, registry source,
   integrity value, and direct/transitive classification.
 - **Python:** pip `install --dry-run --ignore-installed --report` for
-  requirements files. No packages are installed by this resolver.
+  requirements files, plus exact-version parsing for uv, Poetry and Pipenv
+  lockfiles. No packages are installed by this resolver.
 - **Go:** `go list -m -json all` module graph and module checksums.
-- **Gradle, Maven, Nix, Bazel, Conda, Poetry, Bundler, Composer and other
-  discovered formats:** currently discovery-only and explicitly unresolved.
+- **Gradle:** exact module coordinates from `gradle.lockfile`; Gradle build
+  files without an adjacent lockfile remain unresolved.
+- **Maven, Nix, Bazel, Conda, Bundler, Composer and other discovered formats:**
+  currently discovery-only and explicitly unresolved.
 
 A resolved version is not a license finding. An upstream license-evidence record is provenance, not approval; even a recognized permissive license requires an explicit scoped decision for these non-Cargo resolver records. The resolver consults the
 existing upstream evidence catalog and human decision registry using
@@ -81,8 +84,7 @@ evidence without an approved decision remains subject to the policy gate.
 Resolver execution failures and unsupported manifests are recorded as
 unresolved and cause strict mode to fail.
 
-The Python adapter uses pip's dry-run report with `--only-binary=:all:`, so it can require network access
-to resolve uncached packages. The Go adapter uses the Go module tool and may
+The Python requirements adapter uses pip's dry-run report with `--only-binary=:all:`, so it can require network access to resolve uncached packages. Source-only distributions remain unresolved. uv, Poetry and Pipenv lockfiles are parsed locally. The Go adapter uses the Go module tool and may
 also require network access. npm package-lock v2/v3 is parsed locally without
 running package lifecycle scripts. No resolver executes dependency build
 scripts as part of graph discovery.
