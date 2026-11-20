@@ -11,6 +11,61 @@ from audit_dependencies import (blocked_dependency_diagnostics, classify_license
 
 
 class LicenseAuditTests(unittest.TestCase):
+    def test_yarn_lock_classic_and_berry_entries(self):
+        from audit_dependencies import parse_yarn_lock
+        classic = '''# yarn lockfile v1
+"left-pad@^1.0.0", left-pad@~1.0.0:
+  version "1.3.0"
+  resolved "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz"
+  integrity sha512-abc
+"@scope/pkg@^2.0.0":
+  version "2.1.0"
+'''
+        rows = parse_yarn_lock(classic)
+        self.assertEqual({"left-pad", "@scope/pkg"}, {row["name"] for row in rows})
+        self.assertEqual("1.3.0", rows[0]["version"])
+        berry = '''__metadata:
+  version: 6
+"kleur@npm:^4.1.5":
+  version: 4.1.5
+  resolution: "kleur@npm:4.1.5"
+  checksum: abc123
+'''
+        self.assertEqual("kleur", parse_yarn_lock(berry)[0]["name"])
+
+    def test_pnpm_lock_v6_and_v9_graph_snapshots(self):
+        from audit_dependencies import parse_pnpm_lock
+        v6 = '''lockfileVersion: 6.0
+importers:
+  .:
+    dependencies:
+      alpha:
+        specifier: ^1
+        version: 1.2.0
+packages:
+  /alpha/1.2.0:
+    resolution: {integrity: sha512-abc}
+  /beta/2.0.0:
+    resolution: {integrity: sha512-def}
+'''
+        rows = parse_pnpm_lock(v6)
+        self.assertEqual({"alpha", "beta"}, {row["name"] for row in rows})
+        self.assertEqual("direct", next(row["dependency_type"] for row in rows if row["name"] == "alpha"))
+        v9 = '''lockfileVersion: '9.0'
+importers:
+  .:
+    devDependencies:
+      gamma:
+        specifier: ^3
+        version: 3.1.0
+packages:
+  gamma@3.1.0:
+    resolution: {integrity: sha512-ghi}
+'''
+        rows = parse_pnpm_lock(v9)
+        self.assertEqual("3.1.0", rows[0]["version"])
+        self.assertEqual("direct", rows[0]["dependency_type"])
+
     def test_spdx_expression_grammar_accepts_boolean_and_exception_forms(self):
         from audit_dependencies import is_valid_spdx_expression
         for expression in (
