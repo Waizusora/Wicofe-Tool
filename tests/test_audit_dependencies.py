@@ -526,11 +526,11 @@ class LicenseAuditTests(unittest.TestCase):
 
     def test_maven_tgf_parser_preserves_direct_and_transitive_edges(self):
         from audit_dependencies import parse_maven_tgf
-        graph = parse_maven_tgf(
-            "0 [org.example:app:jar:1.0:compile]\\n"
-            "1 [org.example:direct:jar:2.0:compile]\\n"
-            "2 [org.example:transitive:jar:3.0:runtime]\\n"
-            "#\\n0 1\\n1 2\\n")
+        graph = parse_maven_tgf("\\n".join([
+            "0 [org.example:app:jar:1.0:compile]",
+            "1 [org.example:direct:jar:2.0:compile]",
+            "2 [org.example:transitive:jar:3.0:runtime]",
+            "#", "0 1", "1 2", ""]))
         self.assertEqual([
             {"name": "org.example:direct", "version": "2.0", "dependency_type": "direct"},
             {"name": "org.example:transitive", "version": "3.0", "dependency_type": "transitive"},
@@ -539,9 +539,10 @@ class LicenseAuditTests(unittest.TestCase):
     def test_maven_tgf_parser_rejects_malformed_graphs(self):
         from audit_dependencies import parse_maven_tgf
         with self.assertRaises(ValueError):
-            parse_maven_tgf("not-a-node\\n")
+            parse_maven_tgf("not-a-node")
         with self.assertRaises(ValueError):
-            parse_maven_tgf("0 [org.example:app:jar:1.0:compile]\\n#\\n0 9\\n")
+            parse_maven_tgf("\\n".join([
+                "0 [org.example:app:jar:1.0:compile]", "#", "0 9"]))
 
     def test_unimplemented_gradle_manifest_remains_explicitly_unresolved(self):
         from audit_dependencies import resolve_non_cargo_manifests
