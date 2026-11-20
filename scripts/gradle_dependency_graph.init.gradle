@@ -1,6 +1,26 @@
 import groovy.json.JsonOutput
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 
+// Keep variant metadata deterministic and JSON-safe across Gradle versions.
+def serializeVariant = { variant ->
+    def attributes = [:]
+    variant.attributes.keySet().each { attribute ->
+        attributes[attribute.name] = String.valueOf(variant.attributes.getAttribute(attribute))
+    }
+    def capabilities = []
+    if (variant.hasProperty("capabilities")) {
+        variant.capabilities.each { capability ->
+            capabilities << [group: capability.group, name: capability.name,
+                             version: capability.version]
+        }
+    }
+    [displayName: variant.displayName, attributes: attributes,
+     capabilities: capabilities.sort { a, b ->
+         (a.group + ":" + a.name + ":" + (a.version ?: "")) <=>
+         (b.group + ":" + b.name + ":" + (b.version ?: ""))
+     }]
+}
+
 gradle.rootProject { root ->
     root.tasks.register("wicofeExportGradleDependencyGraph") {
         group = "verification"
@@ -39,7 +59,11 @@ gradle.rootProject { root ->
                             }
 
                             def identifier = component.id
-                            def item = [id: componentId, displayName: componentId]
+                            def item = [id: componentId, displayName: componentId, variants: []]
+                            if (component.hasProperty("variants")) {
+                                item.variants = component.variants.collect { serializeVariant(it) }
+                                    .sort { it.displayName }
+                            }
                             if (identifier.hasProperty("group") &&
                                 identifier.hasProperty("module") &&
                                 identifier.hasProperty("version")) {
@@ -64,7 +88,10 @@ gradle.rootProject { root ->
                                         requested: dependency.requested.displayName,
                                         selected: selectedId,
                                         constraint: (dependency.hasProperty("constraint") ?
-                                            dependency.constraint : false)
+                                            dependency.constraint : false),
+                                        selectedVariant: (dependency.hasProperty("resolvedVariant") &&
+                                            dependency.resolvedVariant != null ?
+                                            serializeVariant(dependency.resolvedVariant) : null)
                                     ]
                                     entry.edges << edge
                                     queue << dependency.selected
