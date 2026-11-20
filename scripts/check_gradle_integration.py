@@ -32,7 +32,7 @@ def main() -> int:
     if not any(
         "org.apache.commons:commons-text" in edge.get("requested", "")
         and edge.get("selected", "").startswith("org.apache.commons:commons-lang3:")
-        for edge in substituted["edges"]
+        for edge in substituted["selection_edges"]
     ):
         raise SystemExit("Gradle integration graph did not preserve dependency substitution")
     if not any(row["variants"] for row in rows):
