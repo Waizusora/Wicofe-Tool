@@ -93,7 +93,7 @@ class LicenseAuditTests(unittest.TestCase):
         by_name = {row["name"]: row for row in rows}
         self.assertEqual("direct", by_name["org.example:direct"]["dependency_type"])
         self.assertEqual("transitive", by_name["org.example:transitive"]["dependency_type"])
-        self.assertEqual("transitive", by_name["org.example:constraint-only"]["dependency_type"])
+        self.assertEqual("constraint", by_name["org.example:constraint-only"]["dependency_type"])
         self.assertEqual(["runtimeClasspath"], by_name["org.example:direct"]["configurations"])
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["requested"])
@@ -128,6 +128,41 @@ class LicenseAuditTests(unittest.TestCase):
             [":app:runtimeClasspath: Could not find org.example:missing:1.0"],
             failures,
         )
+
+    def test_gradle_native_resolution_graph_keeps_failed_configuration_incomplete(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath", "rootComponent": None,
+                    "components": [], "edges": [],
+                    "failures": [{"reason": "configuration resolution failed"}],
+                }],
+            }],
+        }
+        rows, failures = parse_gradle_resolution_graph(json.dumps(graph))
+        self.assertEqual([], rows)
+        self.assertEqual(
+            [":app:runtimeClasspath: configuration resolution failed"],
+            failures,
+        )
+
+    def test_gradle_native_resolution_graph_rejects_rootless_success(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath", "rootComponent": None,
+                    "components": [], "edges": [], "failures": [],
+                }],
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "missing rootComponent"):
+            parse_gradle_resolution_graph(json.dumps(graph))
 
     def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
         from audit_dependencies import parse_gradle_resolution_graph
