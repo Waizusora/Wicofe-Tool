@@ -1074,12 +1074,14 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                     f"{failure.get('reason', 'unresolved Gradle dependency')}"
                 )
             direct_ids = {
-                edge["to"] for edge in edges if edge["from"] == root_id
+                edge["to"] for edge in edges
+                if edge["from"] == root_id and not edge.get("constraint", False)
             }
             edges_by_source: dict[str, list[dict[str, Any]]] = {}
             for edge in edges:
                 edges_by_source.setdefault(edge["from"], []).append({
                     "to": edge["to"],
+                    "selected": edge["to"],
                     "requested": edge["requested"],
                     "constraint": bool(edge.get("constraint", False)),
                 })
