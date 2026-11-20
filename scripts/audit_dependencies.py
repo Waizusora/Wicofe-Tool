@@ -530,7 +530,7 @@ def parse_maven_tgf(content: str) -> list[dict[str, str]]:
             in_edges = True
             continue
         if not in_edges:
-            match = re.match(r"^(\\S+)\\s+\\[(.+)\\]$", line)
+            match = re.match(r"^(\S+)\s+\[(.+)\]$", line)
             if not match:
                 raise ValueError(f"unsupported Maven TGF node: {line[:240]}")
             parts = match.group(2).split(":")
@@ -540,7 +540,7 @@ def parse_maven_tgf(content: str) -> list[dict[str, str]]:
             version = parts[-2]
             nodes[match.group(1)] = {"name": f"{group}:{artifact}", "version": version}
         else:
-            match = re.match(r"^(\\S+)\\s+(\\S+)$", line)
+            match = re.match(r"^(\S+)\s+(\\S+)$", line)
             if not match:
                 raise ValueError(f"unsupported Maven TGF edge: {line[:240]}")
             edges.setdefault(match.group(1), []).append(match.group(2))
