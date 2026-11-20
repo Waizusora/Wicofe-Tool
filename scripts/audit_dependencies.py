@@ -35,6 +35,12 @@ def _load_spdx_catalog() -> dict[str, Any]:
 
 def _canonical_legacy_spdx_id(identifier: str) -> str:
     """Normalize common Debian/RPM trailing-plus forms for catalog lookup only."""
+    legacy_aliases = {
+        "bsd-2-clause": "BSD-2-Clause",
+        "bsd-3-clause": "BSD-3-Clause",
+    }
+    if identifier.casefold() in legacy_aliases:
+        return legacy_aliases[identifier.casefold()]
     match = re.fullmatch(r"(AGPL|LGPL|GPL)-([0-9]+(?:[.][0-9]+)?)[+]", identifier, re.IGNORECASE)
     if not match:
         return identifier
