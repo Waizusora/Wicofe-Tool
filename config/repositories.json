@@ -4,23 +4,23 @@
   "policy": "README.md is required in every listed repository. Missing LICENSE is reported as a warning until the repository's licensing status is resolved; this check does not determine license compatibility. The canonical 29-repository set must match config/repository_inventory.txt.",
   "repositories": [
     "Wicofe",
-    "Wicofe-Docs",
-    "Wicofe-Specs",
-    "Wicofe-Tests",
-    "Wicofe-Tools",
+    "Wicofe-Doc",
+    "Wicofe-Spec",
+    "Wicofe-Test",
+    "Wicofe-Tool",
     "Wicofe-ThirdParty",
     "Wicofe-Kernel",
     "Wicofe-ABI",
-    "Wicofe-Drivers",
+    "Wicofe-Driver",
     "Wicofe-Storage",
     "ONWFS",
     "Wicofe-Lib",
     "Wicofe-Libc",
     "Osynit",
-    "Wicofe-Services",
+    "Wicofe-Service",
     "Wicofe-Network",
     "Wicofe-Input",
-    "Wicofe-Graphics",
+    "Wicofe-Graphic",
     "Wicofe-Audio",
     "WDE",
     "WPM",
@@ -31,6 +31,6 @@
     "Wicofe-Update",
     "Wicofe-Recovery",
     "Wicofe-SDK",
-    "Wicofe-Ports"
+    "Wicofe-Port"
   ]
 }
