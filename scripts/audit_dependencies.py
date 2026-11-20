@@ -18,6 +18,64 @@ from pathlib import Path
 from typing import Any
 
 POLICY_VERSION = "0.2.0"
+SPDX_CATALOG_PATH = Path(__file__).resolve().parents[1] / "config" / "spdx-license-catalog.json"
+_SPDX_CATALOG_CACHE: dict[str, Any] | None = None
+
+
+def _load_spdx_catalog() -> dict[str, Any]:
+    """Load the repository-pinned SPDX catalog; never fetch mutable network data at runtime."""
+    global _SPDX_CATALOG_CACHE
+    if _SPDX_CATALOG_CACHE is None:
+        data = json.loads(SPDX_CATALOG_PATH.read_text(encoding="utf-8"))
+        if data.get("schema_version") != 1 or not data.get("spdx_license_list_version"):
+            raise ValueError("invalid pinned SPDX license catalog")
+        _SPDX_CATALOG_CACHE = data
+    return _SPDX_CATALOG_CACHE
+
+
+def _canonical_legacy_spdx_id(identifier: str) -> str:
+    """Normalize common Debian/RPM trailing-plus forms for catalog lookup only."""
+    match = re.fullmatch(r"(AGPL|LGPL|GPL)-([0-9]+(?:[.][0-9]+)?)[+]", identifier, re.IGNORECASE)
+    if not match:
+        return identifier
+    family, version = match.groups()
+    if "." not in version:
+        version += ".0"
+    return f"{family.upper()}-{version}-or-later"
+
+
+def spdx_expression_unknown_identifiers(expression: str) -> list[str]:
+    """Return unknown SPDX license/exception IDs; LicenseRef identifiers remain document-local."""
+    if not is_valid_spdx_expression(expression):
+        return []
+    catalog = _load_spdx_catalog()
+    licenses = set(catalog.get("licenses", []))
+    exceptions = set(catalog.get("exceptions", []))
+    token_pattern = re.compile(
+        r"(?:DocumentRef-[A-Za-z0-9.-]+:)?LicenseRef-[A-Za-z0-9.-]+|"
+        r"[A-Za-z0-9][A-Za-z0-9.+-]*|[()]"
+    )
+    unknown: list[str] = []
+    expect_exception = False
+    for token in token_pattern.findall(expression):
+        upper = token.upper()
+        if upper in {"AND", "OR"} or token in {"(", ")"}:
+            expect_exception = False
+            continue
+        if upper == "WITH":
+            expect_exception = True
+            continue
+        if token.startswith("LicenseRef-") or token.startswith("DocumentRef-"):
+            expect_exception = False
+            continue
+        canonical = _canonical_legacy_spdx_id(token)
+        known = canonical in (exceptions if expect_exception else licenses)
+        if not known:
+            unknown.append(token)
+        expect_exception = False
+    return sorted(set(unknown))
+
+
 MANIFEST_NAMES = {
     "Cargo.toml": "cargo",
     "Cargo.lock": "cargo-lock",
@@ -193,6 +251,8 @@ def classify_license(expression: str | None) -> str:
         return "UNKNOWN"
     if not is_valid_spdx_expression(expression):
         return "INVALID_EXPRESSION"
+    if spdx_expression_unknown_identifiers(expression):
+        return "UNKNOWN_IDENTIFIER"
     branches = split_top_level_or(expression)
     has_agpl = any("AGPL" in branch.upper() for branch in branches)
     has_gpl = any(_branch_has_prohibited_license(branch) and "AGPL" not in branch.upper()
@@ -222,7 +282,7 @@ def license_decision_status(expression: str | None,
         return "REJECTED"
     if category == "UNKNOWN":
         return "UNKNOWN"
-    if category == "INVALID_EXPRESSION":
+    if category in {"INVALID_EXPRESSION", "UNKNOWN_IDENTIFIER"}:
         return "NEEDS_REVIEW"
     if not decision:
         return "NEEDS_REVIEW"
