@@ -35,6 +35,8 @@ def main() -> int:
         for edge in substituted["selection_edges"]
     ):
         raise SystemExit("Gradle integration graph did not preserve dependency substitution")
+    if by_name["org.apache.commons:commons-lang3"]["dependency_type"] != "direct":
+        raise SystemExit("Gradle constraints incorrectly changed a selected direct dependency")
     if not any(row["variants"] for row in rows):
         raise SystemExit("Gradle integration graph contains no selected variant metadata")
     if not any(
