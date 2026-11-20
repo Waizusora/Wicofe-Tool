@@ -80,7 +80,9 @@ class LicenseAuditTests(unittest.TestCase):
                         {"from": "project :app", "to": "org.example:constraint-only:3.0",
                          "requested": "org.example:constraint-only:3.0", "constraint": True},
                         {"from": "org.example:direct:1.0", "to": "org.example:transitive:2.0",
-                         "requested": "org.example:transitive:2.0", "constraint": False},
+                         "requested": "org.example:transitive:2.0", "constraint": False,
+                         "selectedVariant": {"displayName": "runtime", "attributes": {
+                             "org.gradle.usage": "java-runtime"}, "capabilities": []}},
                     ],
                     "failures": [],
                 }],
