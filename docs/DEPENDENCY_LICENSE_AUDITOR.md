@@ -1,6 +1,6 @@
 # Dependency License Auditor
 
-**Status:** Initial implementation; Cargo, npm lockfile, Python requirements/uv/Poetry/Pipenv lockfile, Go module, Gradle lockfile, Maven dependency graph and Nix flake.lock resolvers are implemented. Other non-Cargo ecosystems and release-image inventory remain incomplete.
+**Status:** Initial implementation; Cargo, npm lockfile, Python requirements/uv/Poetry/Pipenv lockfile, Go module, Gradle lockfile, Maven dependency graph, Nix flake.lock and Bazel Bzlmod lockfile resolvers are implemented. Other non-Cargo ecosystems and release-image inventory remain incomplete.
 
 ## Inputs
 
@@ -38,7 +38,7 @@ GPL/AGPL always produce REJECTED regardless of registry entries. LGPL becomes AP
 - Apt package inventories from actual CI runners can be attached as evidence artifacts; source scanning alone records declared package names/versions but does not resolve all transitive system packages.
 - GitHub Actions: external `uses:` references in workflow and composite-action files are inventoried as build-time dependencies. Mutable tags and Docker action references remain UNKNOWN/NEEDS_REVIEW until their source commit and license are verified.
 - Cargo.lock alone: package/version/source/checksum inventory only; license UNKNOWN.
-- npm package-lock v2/v3, Python requirements/uv/Poetry/Pipenv lockfiles, Go modules, Gradle lockfiles, Maven dependency graphs and Nix flake.lock: dependency versions are resolved by dedicated adapters. Python and Go may require network access; Python resolution is binary-only. Missing license evidence or scoped approval remains blocked. pnpm, Yarn, Gradle build files without lockfiles, Bazel, Conda, Bundler, Composer, CMake, Meson and Make remain discovery-only until dedicated resolvers exist.
+- npm package-lock v2/v3, Python requirements/uv/Poetry/Pipenv lockfiles, Go modules, Gradle lockfiles, Maven dependency graphs, Nix flake.lock and Bazel Bzlmod lockfiles: dependency versions are resolved by dedicated adapters. Python and Go may require network access; Python resolution is binary-only. Missing license evidence or scoped approval remains blocked. pnpm, Yarn, Gradle build files without lockfiles, pnpm, Yarn, Conda, Bundler, Composer, CMake, Meson and Make remain discovery-only until dedicated resolvers exist.
 - Vendored source, submodules, compiler toolchains, firmware, fonts, codecs, generated assets, binary payloads and final images require separate evidence/inventory; this initial tool does not certify them.
 - SPDX expression operator/parenthesis grammar is validated before conservative policy classification. This does not verify every identifier against the current SPDX license/exception catalog or provide legal interpretation; invalid syntax is NEEDS_REVIEW and cannot be approved through the decision registry. GPL/AGPL-only or required branches are REJECTED. An expression with a non-GPL/AGPL OR branch (for example GPL OR BSD or GPL OR LGPL) becomes NEEDS_REVIEW until a human explicitly selects an exact branch; the auditor never chooses an alternative. AND expressions that require GPL/AGPL remain REJECTED. Selecting LGPL still requires verified LGPL conditions and explicit approval.
 
@@ -75,7 +75,8 @@ license approval separate from graph resolution:
   files without an adjacent lockfile remain unresolved.
 - **Maven:** dependency graph from the pinned Maven dependency plugin's TGF output; the adapter invokes only the dependency-tree goal, not the project lifecycle.
 - **Nix:** reachable flake inputs from `flake.lock`, retaining locked revisions and nar hashes. `follows` input forms not handled by the current adapter remain unresolved.
-- **pnpm, Yarn, Bazel, Conda, Bundler, Composer and other discovered formats:**
+- **Bazel:** reachable Bzlmod modules from `MODULE.bazel.lock`; legacy or unsupported lock schemas remain unresolved.
+- **pnpm, Yarn, Conda, Bundler, Composer and other discovered formats:**
   currently discovery-only and explicitly unresolved.
 
 A resolved version is not a license finding. An upstream license-evidence record is provenance, not approval; even a recognized permissive license requires an explicit scoped decision for these non-Cargo resolver records. The resolver consults the
