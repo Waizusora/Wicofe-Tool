@@ -11,6 +11,29 @@ from audit_dependencies import (blocked_dependency_diagnostics, classify_license
 
 
 class LicenseAuditTests(unittest.TestCase):
+    def test_spdx_expression_grammar_accepts_boolean_and_exception_forms(self):
+        from audit_dependencies import is_valid_spdx_expression
+        for expression in (
+            "MIT OR Apache-2.0",
+            "(MIT OR Apache-2.0) AND BSD-3-Clause",
+            "GPL-2.0-only WITH Classpath-exception-2.0",
+            "DocumentRef-vendor:LicenseRef-commercial",
+        ):
+            with self.subTest(expression=expression):
+                self.assertTrue(is_valid_spdx_expression(expression))
+
+    def test_spdx_expression_grammar_rejects_malformed_operators_and_tokens(self):
+        from audit_dependencies import is_valid_spdx_expression, license_decision_status
+        for expression in ("MIT OR", "AND MIT", "MIT AND OR Apache-2.0",
+                           "(MIT OR Apache-2.0", "MIT @ Apache-2.0",
+                           "MIT WITH"):
+            with self.subTest(expression=expression):
+                self.assertFalse(is_valid_spdx_expression(expression))
+                self.assertEqual("INVALID_EXPRESSION", classify_license(expression))
+        approval = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                    "evidence": "reviewed", "scope": "fixture", "conditions": "none"}
+        self.assertEqual("NEEDS_REVIEW", license_decision_status("MIT OR", approval))
+
     def test_gpl_is_rejected(self):
         self.assertEqual("PROHIBITED_GPL", classify_license("GPL-3.0-only"))
 
