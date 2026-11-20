@@ -1079,13 +1079,6 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                         f"{project_path}:{config_name}: dependency edge lacks requested selector"
                     )
 
-            for failure in config_failures:
-                if not isinstance(failure, dict):
-                    raise ValueError(f"{project_path}:{config_name}: malformed failure entry")
-                failures.append(
-                    f"{project_path}:{config_name}: "
-                    f"{failure.get('reason', 'unresolved Gradle dependency')}"
-                )
             direct_ids = {
                 edge["to"] for edge in edges
                 if edge["from"] == root_id and not edge.get("constraint", False)
