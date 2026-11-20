@@ -837,11 +837,12 @@ def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
                 current_indent = indent
                 continue
             if current_key is not None and indent > (current_indent or 2):
-                match = re.match(r"(?:version|resolution):\s*(?:\{.*?\bversion:\s*([^,}]+).*\}|([^\s]+))", line)
-                if match:
-                    current_version = (match.group(1) or match.group(2) or "").strip("'\"")
-                elif line.startswith("version:"):
+                if line.startswith("version:"):
                     current_version = line.split(":", 1)[1].strip().strip("'\"")
+                elif line.startswith("resolution:") and "version:" in line:
+                    match = re.search(r"\bversion:\s*([^,}]+)", line)
+                    if match:
+                        current_version = match.group(1).strip("'\"")
         elif section == "importers":
             if indent == 2 and line.endswith(":"):
                 importer_name = line[:-1].strip("'\"") or "."
