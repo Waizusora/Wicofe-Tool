@@ -20,12 +20,12 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out Wicofe-Tools
+      - name: Check out Wicofe-Tool
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          repository: Waizusora/Wicofe-Tools
+          repository: Waizusora/Wicofe-Tool
           ref: ${{ inputs.tools_ref }}
-          path: Wicofe-Tools
+          path: Wicofe-Tool
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
@@ -40,11 +40,11 @@ jobs:
           while IFS= read -r repo; do
             [ -n "$repo" ] || continue
             git clone --depth 1 "https://github.com/Waizusora/$repo.git" "workspace/$repo"
-          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tool/config/repositories.json", encoding="utf-8"))["repositories"]))')
       - name: Verify canonical repository set
         run: |
-          python Wicofe-Tools/scripts/check_repository_matrix.py \
-            --manifest Wicofe-Tools/config/repositories.json \
+          python Wicofe-Tool/scripts/check_repository_matrix.py \
+            --manifest Wicofe-Tool/config/repositories.json \
             --workspace workspace
       - name: Resolve and audit every repository
         shell: bash
@@ -56,9 +56,9 @@ jobs:
             [ -n "$repo" ] || continue
             root="workspace/$repo"
             args=(--workspace "$root" --repository "$repo"
-              --decisions Wicofe-Tools/config/dependency_license_decisions.example.json
-              --evidence Wicofe-Tools/config/upstream_license_evidence.json
-              --coverage Wicofe-Tools/config/repository_dependency_coverage.example.json
+              --decisions Wicofe-Tool/config/dependency_license_decisions.example.json
+              --evidence Wicofe-Tool/config/upstream_license_evidence.json
+              --coverage Wicofe-Tool/config/repository_dependency_coverage.example.json
               --strict --json "reports/dependencies/$repo.json"
               --markdown "reports/dependencies/$repo.md")
             mapfile -d '' manifests < <(
@@ -86,7 +86,7 @@ jobs:
                 fi
               done
             done
-            python Wicofe-Tools/scripts/audit_dependencies.py "${args[@]}" || failed=1
+            python Wicofe-Tool/scripts/audit_dependencies.py "${args[@]}" || failed=1
             if [ -d "$root" ]; then
               while IFS= read -r -d '' lockfile; do
                 relative="${lockfile#"$root"/}"
@@ -94,7 +94,7 @@ jobs:
                 cp "$lockfile" "reports/cargo-metadata/$repo-lockfiles/$relative"
               done < <(find "$root" -type f -name Cargo.lock -not -path '*/.git/*' -not -path '*/target/*' -print0)
             fi
-          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tools/config/repositories.json", encoding="utf-8"))["repositories"]))')
+          done < <(python -c 'import json; print("\n".join(json.load(open("Wicofe-Tool/config/repositories.json", encoding="utf-8"))["repositories"]))')
           if [ "$failed" -ne 0 ]; then
             echo "BLOCKED: one or more repositories have unresolved or unapproved dependencies."
             exit 1
