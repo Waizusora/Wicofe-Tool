@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import json
 import re
-import shutil
 import shlex
 import sys
 import subprocess
@@ -1014,10 +1013,10 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 edge.get("to") for edge in configuration.get("edges", [])
                 if edge.get("from") == root_id
             }
-            edges_by_target: dict[str, list[dict[str, Any]]] = {}
+            edges_by_source: dict[str, list[dict[str, Any]]] = {}
             for edge in configuration.get("edges", []):
-                edges_by_target.setdefault(str(edge.get("to")), []).append({
-                    "from": edge.get("from"),
+                edges_by_source.setdefault(str(edge.get("from")), []).append({
+                    "to": edge.get("to"),
                     "requested": edge.get("requested"),
                     "constraint": bool(edge.get("constraint", False)),
                 })
@@ -1044,7 +1043,7 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 component_id = str(component.get("id"))
                 if component_id in direct_ids:
                     row["dependency_type"] = "direct"
-                row["edges"].extend(edges_by_target.get(component_id, []))
+                row["edges"].extend(edges_by_source.get(component_id, []))
 
     rows = []
     for key, row in sorted(packages.items()):
@@ -1293,9 +1292,9 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     for root in selected_gradle_roots:
         relative_root = str(root.relative_to(workspace)) or "."
         wrapper = root / ("gradlew.bat" if sys.platform == "win32" else "gradlew")
-        gradle_command = [str(wrapper)] if wrapper.is_file() else (
-            [shutil.which("gradle")] if shutil.which("gradle") else []
-        )
+        # Use only the repository wrapper: it pins the Gradle distribution and
+        # avoids machine-dependent system Gradle versions.
+        gradle_command = [str(wrapper)] if wrapper.is_file() else []
         if not gradle_command:
             unresolved.append({
                 "path": relative_root, "ecosystem": "gradle",
