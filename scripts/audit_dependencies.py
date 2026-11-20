@@ -953,6 +953,34 @@ def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
     return rows
 
 
+def parse_gradle_lockfile(content: str) -> list[dict[str, str]]:
+    """Parse Gradle lock state, merging configurations for each locked module."""
+    modules: dict[str, set[str]] = {}
+    for line_number, raw_line in enumerate(content.splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "empty=":
+            continue
+        coordinate, separator, configuration_text = line.partition("=")
+        parts = coordinate.split(":")
+        if len(parts) != 3 or not separator or not configuration_text.strip():
+            raise ValueError(f"invalid Gradle lock entry at line {line_number}")
+        group, artifact, version = parts
+        if not group or not artifact or not version:
+            raise ValueError(f"invalid Gradle module coordinate at line {line_number}")
+        configurations = {item.strip() for item in configuration_text.split(",") if item.strip()}
+        if not configurations:
+            raise ValueError(f"missing Gradle lock configurations at line {line_number}")
+        key = f"{group}:{artifact}:{version}"
+        modules.setdefault(key, set()).update(configurations)
+    return [
+        {"name": ":".join(key.split(":")[:2]), "version": key.split(":")[2],
+         "configurations": ",".join(sorted(configurations))}
+        for key, configurations in sorted(modules.items())
+    ]
+
+
 def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
     """Read Gradle version-catalog library/plugin declarations, not resolved artifacts."""
     data = tomllib.loads(content)
@@ -1168,28 +1196,20 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "python",
                                "reason": f"pip resolver failed: {exc}"})
 
-    # Gradle lockfiles pin the resolved module coordinates without executing build scripts.
+    # Gradle lockfiles are project-scoped; preserve configuration coverage per module.
     gradle_lock_paths = [(workspace / p) for p, e in paths.items() if e == "gradle-lock"]
     for path in gradle_lock_paths:
         relative = str(path.relative_to(workspace))
         try:
-            for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                coordinate, separator, configurations = line.partition("=")
-                parts = coordinate.split(":")
-                if len(parts) != 3 or not separator or not configurations.strip():
-                    unresolved.append({"path": relative, "ecosystem": "gradle",
-                                       "reason": f"invalid Gradle lock entry at line {line_number}"})
-                    continue
-                group, artifact, version = parts
-                dependencies.append(_resolved_dependency_record(
-                    "gradle", f"{group}:{artifact}", version, repository,
-                    decisions, upstream_evidence, "locked", relative, None))
-        except (OSError, UnicodeError) as exc:
+            for package in parse_gradle_lockfile(path.read_text(encoding="utf-8")):
+                record = _resolved_dependency_record(
+                    "gradle", package["name"], package["version"], repository,
+                    decisions, upstream_evidence, "locked", relative, None)
+                record["gradle_configurations"] = package["configurations"].split(",")
+                dependencies.append(record)
+        except (OSError, UnicodeError, ValueError) as exc:
             unresolved.append({"path": relative, "ecosystem": "gradle",
-                               "reason": f"cannot read Gradle lockfile: {exc}"})
+                               "reason": f"Gradle lock resolver failed: {exc}"})
 
     # Gradle version catalogs are declarations; they do not prove usage or resolution.
     for relative, ecosystem in paths.items():
