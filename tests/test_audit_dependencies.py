@@ -11,6 +11,27 @@ from audit_dependencies import (blocked_dependency_diagnostics, classify_license
 
 
 class LicenseAuditTests(unittest.TestCase):
+    def test_spdx_catalog_validates_license_ids_exceptions_and_custom_refs(self):
+        from audit_dependencies import spdx_expression_unknown_identifiers, license_decision_status
+        for expression in (
+            "MIT",
+            "MIT OR Apache-2.0",
+            "GPL-2.0-only WITH Classpath-exception-2.0",
+            "DocumentRef-vendor:LicenseRef-commercial",
+            "GPL-2+",
+        ):
+            with self.subTest(expression=expression):
+                self.assertEqual([], spdx_expression_unknown_identifiers(expression))
+        self.assertEqual(["Not-A-Real-License"],
+                         spdx_expression_unknown_identifiers("MIT OR Not-A-Real-License"))
+        self.assertEqual(["Not-A-Real-Exception"],
+                         spdx_expression_unknown_identifiers("GPL-2.0-only WITH Not-A-Real-Exception"))
+        self.assertEqual("UNKNOWN_IDENTIFIER", classify_license("MIT OR Not-A-Real-License"))
+        approval = {"status": "approved", "reviewer": "reviewer", "approved_by": "owner",
+                    "evidence": "reviewed", "scope": "fixture", "conditions": "none"}
+        self.assertEqual("NEEDS_REVIEW",
+                         license_decision_status("Not-A-Real-License", approval))
+
     def test_gradle_version_catalog_library_plugin_and_version_refs(self):
         from audit_dependencies import parse_gradle_version_catalog
         content = '''[versions]
