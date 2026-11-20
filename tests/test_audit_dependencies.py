@@ -521,6 +521,30 @@ class LicenseAuditTests(unittest.TestCase):
             self.assertEqual("locked", rows[0]["dependency_type"])
             self.assertEqual("UNKNOWN", rows[0]["status"])
 
+    def test_bazel_module_lock_resolves_reachable_direct_and_transitive_modules(self):
+        from audit_dependencies import resolve_non_cargo_manifests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "MODULE.bazel").write_text("module(name = \"fixture\")\\n", encoding="utf-8")
+            (root / "MODULE.bazel.lock").write_text(json.dumps({
+                "lockFileVersion": 11,
+                "moduleDepGraph": {
+                    "root": {"dependencies": {"skylib": "bazel_skylib@1.6.1"}},
+                    "bazel_skylib@1.6.1": {
+                        "name": "bazel_skylib", "version": "1.6.1",
+                        "repoSpec": {"type": "registry"},
+                        "dependencies": {"platforms": "platforms@0.0.9"}},
+                    "platforms@0.0.9": {
+                        "name": "platforms", "version": "0.0.9",
+                        "repoSpec": {"type": "registry"}, "dependencies": {}}
+                }}), encoding="utf-8")
+            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            self.assertEqual([], unresolved)
+            self.assertEqual({"bazel_skylib", "platforms"}, {row["name"] for row in rows})
+            self.assertEqual("direct", next(row for row in rows if row["name"] == "bazel_skylib")["dependency_type"])
+            self.assertEqual("transitive", next(row for row in rows if row["name"] == "platforms")["dependency_type"])
+            self.assertTrue(all(row["status"] == "UNKNOWN" for row in rows))
+
     def test_nix_flake_lock_resolves_reachable_nodes_and_nar_hashes(self):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
