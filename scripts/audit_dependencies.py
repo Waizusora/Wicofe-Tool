@@ -49,6 +49,7 @@ MANIFEST_NAMES = {
     "WORKSPACE": "bazel-workspace",
     "WORKSPACE.bazel": "bazel-workspace",
     "Bazel.lock": "bazel-lock",
+    "MODULE.bazel.lock": "bazel-lock",
     "poetry.lock": "poetry-lock",
     "uv.lock": "uv-lock",
     "Pipfile": "pipenv",
@@ -632,6 +633,53 @@ def parse_maven_tgf(content: str) -> list[dict[str, str]]:
             for node in sorted(depth, key=lambda item: (depth[item], item)) if node != root]
 
 
+def parse_bazel_module_lock(content: str) -> list[dict[str, str]]:
+    """Read the reachable Bzlmod dependency graph from MODULE.bazel.lock."""
+    data = json.loads(content)
+    graph = data.get("moduleDepGraph")
+    if not isinstance(graph, dict) or not isinstance(graph.get("root"), dict):
+        raise ValueError("Bazel lockfile must contain moduleDepGraph.root")
+    queue = []
+    root_dependencies = graph["root"].get("dependencies", {})
+    if not isinstance(root_dependencies, dict):
+        raise ValueError("Bazel root dependencies must be an object")
+    queue.extend((key, "direct") for _, key in sorted(root_dependencies.items())
+                 if isinstance(key, str))
+    if len(queue) != len(root_dependencies):
+        raise ValueError("Bazel root contains an unsupported dependency reference")
+    seen: dict[str, str] = {}
+    while queue:
+        key, relation = queue.pop(0)
+        if key in seen and seen[key] == "direct":
+            continue
+        node = graph.get(key)
+        if not isinstance(node, dict):
+            raise ValueError(f"Bazel module graph references missing node {key}")
+        seen[key] = relation
+        dependencies = node.get("dependencies", {})
+        if not isinstance(dependencies, dict):
+            raise ValueError(f"Bazel module {key} dependencies must be an object")
+        for _, child in sorted(dependencies.items()):
+            if not isinstance(child, str):
+                raise ValueError(f"Bazel module {key} has invalid dependency reference")
+            if child not in seen:
+                queue.append((child, "transitive"))
+    rows = []
+    for key, relation in sorted(seen.items()):
+        node = graph[key]
+        name, version = node.get("name"), node.get("version")
+        if not name or not version:
+            match = re.fullmatch(r"(.+)@([^@]+)", key)
+            if not match:
+                raise ValueError(f"Bazel module key lacks name/version: {key}")
+            name, version = match.groups()
+        repo_spec = node.get("repoSpec", {})
+        source = repo_spec.get("registry") or repo_spec.get("type") or "Bzlmod"
+        rows.append({"name": str(name), "version": str(version),
+                     "dependency_type": relation, "source": str(source)})
+    return rows
+
+
 def parse_nix_flake_lock(content: str) -> list[dict[str, str]]:
     """Resolve reachable flake.lock nodes from root inputs, preserving immutable revisions."""
     data = json.loads(content)
@@ -830,6 +878,21 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "gradle",
                                "reason": f"cannot read Gradle lockfile: {exc}"})
 
+    # Bzlmod lockfiles encode the resolved module dependency graph as JSON.
+    bazel_lock_paths = [workspace / p for p, e in paths.items() if e == "bazel-lock"]
+    bazel_lock_dirs = {path.parent for path in bazel_lock_paths}
+    for path in bazel_lock_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            for package in parse_bazel_module_lock(path.read_text(encoding="utf-8")):
+                dependencies.append(_resolved_dependency_record(
+                    "bazel", package["name"], package["version"], repository,
+                    decisions, upstream_evidence, package["dependency_type"],
+                    package["source"], None))
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "bazel",
+                               "reason": f"Bazel module lock resolver failed: {exc}"})
+
     # Nix flake.lock is a JSON graph rooted at the flake's root input map.
     nix_lock_paths = [workspace / p for p, e in paths.items() if e == "nix-lock"]
     nix_lock_dirs = {path.parent for path in nix_lock_paths}
@@ -897,7 +960,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
-               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "nix-lock", "maven"}
+               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock", "nix-lock", "maven", "bazel-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
@@ -930,6 +993,8 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
         if ecosystem == "gradle" and path.parent in gradle_lock_dirs:
             continue
         if ecosystem == "nix" and path.parent in nix_lock_dirs:
+            continue
+        if ecosystem == "bazel" and path.parent in bazel_lock_dirs:
             continue
         if ecosystem == "maven" and path.parent in maven_dirs:
             continue
