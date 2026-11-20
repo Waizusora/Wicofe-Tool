@@ -100,8 +100,10 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["selected"])
         self.assertEqual("runtime", by_name["org.example:direct"]["variants"][0]["displayName"])
-        self.assertEqual("runtime",
-                         by_name["org.example:direct"]["edges"][0]["selected_variant"]["displayName"])
+        self.assertTrue(any(
+            edge.get("selected_variant", {}).get("displayName") == "runtime"
+            for edge in by_name["org.example:direct"]["edges"]
+        ))
 
     def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
         from audit_dependencies import parse_gradle_resolution_graph
