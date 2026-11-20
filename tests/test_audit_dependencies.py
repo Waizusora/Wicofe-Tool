@@ -105,6 +105,28 @@ class LicenseAuditTests(unittest.TestCase):
             for edge in by_name["org.example:direct"]["edges"]
         ))
 
+    def test_gradle_native_resolution_graph_preserves_resolution_failures(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath", "rootComponent": "project :app",
+                    "components": [{"id": "project :app", "kind": "project"}],
+                    "edges": [],
+                    "failures": [{"requested": "org.example:missing:1.0",
+                                  "reason": "Could not find org.example:missing:1.0"}],
+                }],
+            }],
+        }
+        rows, failures = parse_gradle_resolution_graph(json.dumps(graph))
+        self.assertEqual([], rows)
+        self.assertEqual(
+            [":app:runtimeClasspath: Could not find org.example:missing:1.0"],
+            failures,
+        )
+
     def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
         from audit_dependencies import parse_gradle_resolution_graph
         graph = {
