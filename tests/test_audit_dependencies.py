@@ -64,7 +64,9 @@ class LicenseAuditTests(unittest.TestCase):
                     "components": [
                         {"id": "project :app", "kind": "project"},
                         {"id": "org.example:direct:1.0", "kind": "module",
-                         "group": "org.example", "module": "direct", "version": "1.0"},
+                         "group": "org.example", "module": "direct", "version": "1.0",
+                         "variants": [{"displayName": "runtime", "attributes": {
+                             "org.gradle.usage": "java-runtime"}, "capabilities": []}]},
                         {"id": "org.example:transitive:2.0", "kind": "module",
                          "group": "org.example", "module": "transitive", "version": "2.0"},
                         {"id": "org.example:constraint-only:3.0", "kind": "module",
@@ -72,7 +74,9 @@ class LicenseAuditTests(unittest.TestCase):
                     ],
                     "edges": [
                         {"from": "project :app", "to": "org.example:direct:1.0",
-                         "requested": "org.example:direct:1.0", "constraint": False},
+                         "requested": "org.example:direct:1.0", "constraint": False,
+                         "selectedVariant": {"displayName": "runtime", "attributes": {
+                             "org.gradle.usage": "java-runtime"}, "capabilities": []}},
                         {"from": "project :app", "to": "org.example:constraint-only:3.0",
                          "requested": "org.example:constraint-only:3.0", "constraint": True},
                         {"from": "org.example:direct:1.0", "to": "org.example:transitive:2.0",
@@ -93,6 +97,9 @@ class LicenseAuditTests(unittest.TestCase):
                          by_name["org.example:direct"]["edges"][0]["requested"])
         self.assertEqual("org.example:transitive:2.0",
                          by_name["org.example:direct"]["edges"][0]["selected"])
+        self.assertEqual("runtime", by_name["org.example:direct"]["variants"][0]["displayName"])
+        self.assertEqual("runtime",
+                         by_name["org.example:direct"]["edges"][0]["selected_variant"]["displayName"])
 
     def test_gradle_native_resolution_graph_rejects_missing_root_component(self):
         from audit_dependencies import parse_gradle_resolution_graph
