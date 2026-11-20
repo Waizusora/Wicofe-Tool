@@ -1084,6 +1084,7 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                     "selected": edge["to"],
                     "requested": edge["requested"],
                     "constraint": bool(edge.get("constraint", False)),
+                    "selected_variant": edge.get("selectedVariant"),
                 })
             for component in components:
                 if component.get("kind") != "module":
@@ -1100,8 +1101,16 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 row = packages.setdefault(key, {
                     "name": f"{group}:{module}", "version": str(version),
                     "configurations": set(), "projects": set(),
-                    "dependency_type": "transitive", "edges": [],
+                    "dependency_type": "transitive", "edges": [], "variants": [],
                 })
+                variants = component.get("variants", [])
+                if not isinstance(variants, list) or any(
+                    not isinstance(variant, dict) for variant in variants
+                ):
+                    raise ValueError(
+                        f"{project_path}:{config_name}: component variants must be objects"
+                    )
+                row["variants"].extend(variants)
                 row["configurations"].add(config_name)
                 row["projects"].add(project_path)
                 component_id = component["id"]
@@ -1117,6 +1126,11 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
             "projects": sorted(row["projects"]),
             "dependency_type": row["dependency_type"],
             "edges": row["edges"],
+            "variants": [
+                json.loads(value) for value in sorted(
+                    {json.dumps(variant, sort_keys=True) for variant in row["variants"]}
+                )
+            ],
         })
     return rows, failures
 
