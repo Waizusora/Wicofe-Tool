@@ -46,6 +46,13 @@ jobs:
           python Wicofe-Tool/scripts/check_repository_matrix.py \
             --manifest Wicofe-Tool/config/repositories.json \
             --workspace workspace
+      - name: Generate repository dependency manifest coverage report
+        run: |
+          python Wicofe-Tool/scripts/report_manifest_coverage.py \
+            --manifest Wicofe-Tool/config/repositories.json \
+            --workspace workspace \
+            --json reports/manifest-coverage.json \
+            --markdown reports/manifest-coverage.md
       - name: Resolve and audit every repository
         shell: bash
         run: |
