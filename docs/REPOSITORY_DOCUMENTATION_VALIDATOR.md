@@ -21,6 +21,8 @@ python3 scripts/validate_repository_docs.py ../workspace --forbid-term MYPK --ex
 ## Checks
 
 - Local Markdown file links and heading fragments.
+- `https://github.com/Waizusora/<repo>` links against checked-out repositories in the workspace.
+- GitHub `/blob/main/` file targets and `/tree/main/` directory targets, including Markdown heading fragments.
 - Directory links with README.md, INDEX.md or index.md.
 - Links escaping the declared workspace.
 - Optional case-insensitive forbidden terms in Markdown prose.
@@ -29,7 +31,8 @@ Exit code is 0 when no findings are detected and 1 when findings exist.
 
 ## Limitations
 
-- HTTP(S) links are not requested.
+- Arbitrary external HTTP(S) links are not requested. GitHub links owned by `Waizusora` are checked locally only for repository checkouts and the `main` ref.
+- GitHub links targeting non-`main` refs are skipped because the cross-repository workflow checks out the default branch only.
 - Reference-style Markdown links, raw HTML links and complex nested-parenthesis destinations are not fully parsed.
 - Heading slug generation covers common GitHub Markdown headings, not every renderer.
 - This tool does not validate dependency trees, SPDX expressions, legal compatibility, requirement IDs, test IDs or CI status.
