@@ -1,0 +1,2 @@
+rootProject.name = "wicofe-gradle-integration"
+include(":app", ":library")
