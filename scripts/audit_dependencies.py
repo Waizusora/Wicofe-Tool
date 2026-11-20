@@ -39,6 +39,16 @@ MANIFEST_NAMES = {
     "pyproject.toml": "python",
     "requirements.txt": "python-requirements",
     "requirements-dev.txt": "python-requirements",
+    "constraints.txt": "python-constraints",
+    "environment.yml": "conda-environment",
+    "environment.yaml": "conda-environment",
+    "conda-lock.yml": "conda-lock",
+    "flake.nix": "nix",
+    "flake.lock": "nix-lock",
+    "MODULE.bazel": "bazel",
+    "WORKSPACE": "bazel-workspace",
+    "WORKSPACE.bazel": "bazel-workspace",
+    "Bazel.lock": "bazel-lock",
     "poetry.lock": "poetry-lock",
     "uv.lock": "uv-lock",
     "Pipfile": "pipenv",
@@ -430,12 +440,25 @@ def lockfile_records(path: Path, repository: str) -> list[dict[str, Any]]:
     return records
 
 
+def manifest_ecosystem(path: Path) -> str | None:
+    """Classify supported dependency/build manifests, including versioned requirement files."""
+    name = path.name
+    if re.fullmatch(r"requirements(?:[-_.][A-Za-z0-9_.-]+)?\\.(?:txt|in)", name, re.IGNORECASE):
+        return "python-requirements"
+    if re.fullmatch(r"constraints(?:[-_.][A-Za-z0-9_.-]+)?\\.(?:txt|in)", name, re.IGNORECASE):
+        return "python-constraints"
+    if name in {"action.yml", "action.yaml"} and ".github" in path.parts and "actions" in path.parts:
+        return "github-local-action"
+    return MANIFEST_NAMES.get(name)
+
+
 def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     found = []
+    excluded = {".git", "target", "node_modules", ".venv", ".gradle", "dist", "build"}
     for path in sorted(workspace.rglob("*")):
-        if not path.is_file() or any(part in {".git", "target", "node_modules", ".venv"} for part in path.parts):
+        if not path.is_file() or any(part in excluded for part in path.parts):
             continue
-        ecosystem = MANIFEST_NAMES.get(path.name)
+        ecosystem = manifest_ecosystem(path)
         if ecosystem:
             found.append({"repository": repository, "path": str(path.relative_to(workspace)),
                           "ecosystem": ecosystem, "status": "DISCOVERED",
