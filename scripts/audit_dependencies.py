@@ -774,14 +774,14 @@ def parse_yarn_lock(content: str) -> list[dict[str, str]]:
     for raw in content.splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        if raw[0] not in " \\t":
+        if raw[0] not in " \t":
             if raw.endswith(":"):
                 flush()
                 current_selectors = _split_lock_selectors(raw[:-1])
                 version = source = integrity = None
                 continue
             raise ValueError(f"unsupported Yarn lock top-level line: {raw[:160]}")
-        match = re.match(r"^\\s+(version|resolved|resolution|integrity|checksum):\\s*(.*?)\\s*$", raw)
+        match = re.match(r"^\s+(version|resolved|resolution|integrity|checksum)(?::\s*|\s+)(.*?)\s*$", raw)
         if not match:
             continue
         key, value = match.groups()
@@ -837,7 +837,7 @@ def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
                 current_indent = indent
                 continue
             if current_key is not None and indent > (current_indent or 2):
-                match = re.match(r"(?:version|resolution):\\s*(?:\\{.*?\\bversion:\\s*([^,}]+).*\\}|([^\\s]+))", line)
+                match = re.match(r"(?:version|resolution):\s*(?:\{.*?\bversion:\s*([^,}]+).*\}|([^\s]+))", line)
                 if match:
                     current_version = (match.group(1) or match.group(2) or "").strip("'\"")
                 elif line.startswith("version:"):
@@ -864,7 +864,7 @@ def parse_pnpm_lock(content: str) -> list[dict[str, str]]:
     for key, version in package_entries:
         if not version:
             # v5/v6 keys include /name/version; v9 keys include name@version.
-            match = re.search(r"/([^/]+)/([^/()]+)(?:\\(|$)", key)
+            match = re.search(r"/([^/]+)/([^/()]+)(?:\(|$)", key)
             if match:
                 version = match.group(2)
             else:
