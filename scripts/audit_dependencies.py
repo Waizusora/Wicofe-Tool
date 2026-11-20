@@ -1078,13 +1078,19 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 if edge["from"] == root_id and not edge.get("constraint", False)
             }
             edges_by_source: dict[str, list[dict[str, Any]]] = {}
+            selection_edges_by_target: dict[str, list[dict[str, Any]]] = {}
             for edge in edges:
-                edges_by_source.setdefault(edge["from"], []).append({
+                normalized_edge = {
                     "to": edge["to"],
                     "selected": edge["to"],
                     "requested": edge["requested"],
                     "constraint": bool(edge.get("constraint", False)),
                     "selected_variant": edge.get("selectedVariant"),
+                }
+                edges_by_source.setdefault(edge["from"], []).append(normalized_edge)
+                selection_edges_by_target.setdefault(edge["to"], []).append({
+                    "from": edge["from"],
+                    **normalized_edge,
                 })
             for component in components:
                 if component.get("kind") != "module":
@@ -1101,7 +1107,8 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 row = packages.setdefault(key, {
                     "name": f"{group}:{module}", "version": str(version),
                     "configurations": set(), "projects": set(),
-                    "dependency_type": "transitive", "edges": [], "variants": [],
+                    "dependency_type": "transitive", "edges": [],
+                    "selection_edges": [], "variants": [],
                 })
                 variants = component.get("variants", [])
                 if not isinstance(variants, list) or any(
@@ -1117,6 +1124,7 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
                 if component_id in direct_ids:
                     row["dependency_type"] = "direct"
                 row["edges"].extend(edges_by_source.get(component_id, []))
+                row["selection_edges"].extend(selection_edges_by_target.get(component_id, []))
 
     rows = []
     for key, row in sorted(packages.items()):
@@ -1126,6 +1134,7 @@ def parse_gradle_resolution_graph(content: str) -> tuple[list[dict[str, Any]], l
             "projects": sorted(row["projects"]),
             "dependency_type": row["dependency_type"],
             "edges": row["edges"],
+            "selection_edges": row["selection_edges"],
             "variants": [
                 json.loads(value) for value in sorted(
                     {json.dumps(variant, sort_keys=True) for variant in row["variants"]}
