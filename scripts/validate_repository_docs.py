@@ -112,7 +112,8 @@ def scan_markdown_file(path: Path, workspace: Path, forbidden_terms: list[str]) 
             if not target:
                 continue
             parsed = urlsplit(target)
-            fragment = parsed.fragment
+            fragment = unquote(parsed.fragment)
+            github_tree_link = False
             if parsed.scheme or parsed.netloc:
                 if parsed.netloc.casefold() not in {"github.com", "www.github.com"}:
                     continue
@@ -124,6 +125,7 @@ def scan_markdown_file(path: Path, workspace: Path, forbidden_terms: list[str]) 
                 if len(parts) == 2:
                     destination = repo_root
                 elif len(parts) >= 5 and parts[2] in {"blob", "tree"} and parts[3] == "main":
+                    github_tree_link = parts[2] == "tree"
                     destination = repo_root.joinpath(*parts[4:])
                 else:
                     # Non-main refs cannot be verified against the shallow main checkouts.
@@ -148,6 +150,8 @@ def scan_markdown_file(path: Path, workspace: Path, forbidden_terms: list[str]) 
             if not destination.exists():
                 findings.append(Finding(path, number, "BROKEN_LINK",
                                         f"target does not exist: {target}"))
+                continue
+            if destination.is_dir() and github_tree_link:
                 continue
             if destination.is_dir():
                 index_candidates = [destination / "README.md", destination / "INDEX.md",
