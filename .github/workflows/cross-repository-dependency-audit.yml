@@ -86,7 +86,9 @@ jobs:
                 fi
               done
             done
+            echo "::group::Dependency audit: $repo"
             python Wicofe-Tool/scripts/audit_dependencies.py "${args[@]}" || failed=1
+            echo "::endgroup::"
             if [ -d "$root" ]; then
               while IFS= read -r -d '' lockfile; do
                 relative="${lockfile#"$root"/}"
