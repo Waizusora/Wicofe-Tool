@@ -757,7 +757,7 @@ def parse_yarn_lock(content: str) -> list[dict[str, str]]:
     integrity = None
 
     def flush() -> None:
-        if not current_selectors:
+        if not current_selectors or current_selectors == ["__metadata"]:
             return
         if not version:
             raise ValueError(f"Yarn lock entry has no version: {current_selectors[0]}")
