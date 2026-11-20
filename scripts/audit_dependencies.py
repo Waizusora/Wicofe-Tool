@@ -481,6 +481,10 @@ def _resolved_dependency_record(ecosystem: str, name: str, version: str,
     evidence = [{"kind": f"{ecosystem}_resolver", "source": source,
                  "checksum": checksum}]
     evidence.extend(evidence_record.get("license_evidence", []))
+    status = license_decision_status(license_expr, decision)
+    # An upstream evidence record is provenance, not a human approval.
+    if license_expr and not decision and status == "PASS":
+        status = "NEEDS_REVIEW"
     return {
         "repository": repository, "ecosystem": ecosystem, "name": name,
         "version": version, "package_id": key, "source": source,
@@ -490,7 +494,7 @@ def _resolved_dependency_record(ecosystem: str, name: str, version: str,
         "checksum": checksum, "license": license_expr,
         "license_category": classify_license(license_expr),
         "license_evidence": evidence, "dependency_type": dependency_type,
-        "enabled_features": [], "status": license_decision_status(license_expr, decision),
+        "enabled_features": [], "status": status,
         "distribution": "not established by dependency resolution",
         "security_status": "NOT_ASSESSED", "maintenance_status": "NOT_ASSESSED",
         "decision": decision,
@@ -538,6 +542,8 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             for package_path, package in sorted(packages.items()):
                 if not package_path or not package_path.startswith("node_modules/"):
                     continue
+                if package.get("link"):
+                    continue
                 name = package.get("name")
                 if not name:
                     suffix = package_path.split("node_modules/")[-1]
@@ -565,7 +571,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             with tempfile.TemporaryDirectory(prefix="wicofe-pip-audit-") as tmp:
                 report_path = Path(tmp) / "pip-report.json"
                 command = [sys.executable, "-m", "pip", "install", "--dry-run",
-                           "--ignore-installed", "--disable-pip-version-check",
+                           "--ignore-installed", "--only-binary=:all:", "--disable-pip-version-check",
                            "--report", str(report_path), "-r", str(path)]
                 result = subprocess.run(command, cwd=workspace, capture_output=True,
                                         text=True, timeout=600)
