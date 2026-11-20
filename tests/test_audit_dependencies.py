@@ -286,8 +286,8 @@ class LicenseAuditTests(unittest.TestCase):
             (root / "ci.yml").write_text(
                 "jobs:\n  build:\n    runs-on: ubuntu-26.04\n    steps:\n"
                 "      - run: |\n          sudo apt-get update\n"
-                "          sudo apt-get install --yes \\\n"
-                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\\n"
+                "          sudo apt-get install --yes \\n"
+                "            qemu-system-x86=1:10.2.1+ds-1ubuntu3.3 \\n"
                 "            xorriso=1:1.5.6-1.1ubuntu4\n", encoding="utf-8")
             scripts, dependencies = scan_build_scripts(Path(tmp), "fixture", {}, {})
             packages = [item for item in dependencies if item["ecosystem"] == "system-package"]
@@ -408,11 +408,11 @@ class LicenseAuditTests(unittest.TestCase):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            uv_content = "\\n".join([
+            uv_content = "\n".join([
                 '[[package]]', 'name = "uv-sample"', 'version = "1.2.3"',
                 'source = { registry = "https://pypi.org/simple" }',
                 'sdist = { hash = "sha256:uvhash" }', ''])
-            poetry_content = "\\n".join([
+            poetry_content = "\n".join([
                 '[[package]]', 'name = "poetry-sample"', 'version = "4.5.6"',
                 'files = [{file = "sample.whl", hash = "sha256:poetryhash"}]', ''])
             (root / "uv.lock").write_text(uv_content, encoding="utf-8")
@@ -486,9 +486,9 @@ class LicenseAuditTests(unittest.TestCase):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "build.gradle.kts").write_text("plugins {}\\n", encoding="utf-8")
+            (root / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
             (root / "gradle.lockfile").write_text(
-                "org.example:library:2.4.1=runtimeClasspath\\n", encoding="utf-8")
+                "org.example:library:2.4.1=runtimeClasspath\n", encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual([], unresolved)
             self.assertEqual(1, len(rows))
@@ -502,7 +502,7 @@ class LicenseAuditTests(unittest.TestCase):
         from audit_dependencies import resolve_non_cargo_manifests
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "build.gradle.kts").write_text("plugins {}\\n", encoding="utf-8")
+            (root / "build.gradle.kts").write_text("plugins {}\n", encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
             self.assertEqual([], rows)
             self.assertEqual("gradle", unresolved[0]["ecosystem"])
