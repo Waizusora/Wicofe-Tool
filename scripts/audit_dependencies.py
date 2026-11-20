@@ -1510,7 +1510,9 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             continue
         if ecosystem in {"python", "pipenv"} and path.parent in python_lock_dirs:
             continue
-        if ecosystem == "gradle" and path.parent in gradle_lock_dirs:
+        if ecosystem == "gradle" and any(
+                root == path.parent or root in path.parents
+                for root in selected_gradle_roots):
             continue
         if ecosystem == "nix" and path.parent in nix_lock_dirs:
             continue
