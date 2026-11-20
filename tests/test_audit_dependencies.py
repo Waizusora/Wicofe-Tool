@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from audit_dependencies import (classify_license, cargo_records, load_decisions,
+from audit_dependencies import (blocked_dependency_diagnostics, classify_license, cargo_records, load_decisions,
                                 lockfile_records, merge_cargo_records, scan_assets, scan_manifests, load_coverage, scan_github_actions, load_upstream_evidence, scan_build_scripts, scan_rust_toolchain)
 
 
@@ -387,6 +387,21 @@ class LicenseAuditTests(unittest.TestCase):
     def test_or_later_is_part_of_license_identifier_not_an_alternative(self):
         self.assertEqual("PROHIBITED_GPL", classify_license("GPL-2.0-or-later"))
         self.assertEqual("PROHIBITED_AGPL", classify_license("AGPL-3.0-or-later"))
+
+    def test_blocked_dependency_diagnostics_identify_license_and_origin(self):
+        rows = [
+            {"ecosystem": "system-package", "name": "qemu-system-x86",
+             "version": "1:10.2.1", "license": "GPL-2.0-or-later",
+             "status": "REJECTED", "dependency_type": "build-time",
+             "license_evidence": [{"path": ".github/workflows/kernel-check.yml", "line": 20}]},
+            {"ecosystem": "cargo", "name": "approved", "version": "1.0.0",
+             "license": "MIT", "status": "PASS", "dependency_type": "direct"},
+        ]
+        diagnostics = blocked_dependency_diagnostics(rows)
+        self.assertEqual(1, len(diagnostics))
+        self.assertIn("qemu-system-x86@1:10.2.1", diagnostics[0])
+        self.assertIn("GPL-2.0-or-later", diagnostics[0])
+        self.assertIn(".github/workflows/kernel-check.yml:20", diagnostics[0])
 
 if __name__ == "__main__":
     unittest.main()
