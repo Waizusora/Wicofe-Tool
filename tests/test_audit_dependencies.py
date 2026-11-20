@@ -32,6 +32,46 @@ class LicenseAuditTests(unittest.TestCase):
         self.assertEqual("NEEDS_REVIEW",
                          license_decision_status("Not-A-Real-License", approval))
 
+    def test_gradle_native_resolution_graph_preserves_edges_and_configurations(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        graph = {
+            "schemaVersion": 1,
+            "projects": [{
+                "path": ":app",
+                "configurations": [{
+                    "name": "runtimeClasspath",
+                    "rootComponent": "project :app",
+                    "components": [
+                        {"id": "project :app", "kind": "project"},
+                        {"id": "org.example:direct:1.0", "kind": "module",
+                         "group": "org.example", "module": "direct", "version": "1.0"},
+                        {"id": "org.example:transitive:2.0", "kind": "module",
+                         "group": "org.example", "module": "transitive", "version": "2.0"},
+                    ],
+                    "edges": [
+                        {"from": "project :app", "to": "org.example:direct:1.0",
+                         "requested": "org.example:direct:1.0", "constraint": False},
+                        {"from": "org.example:direct:1.0", "to": "org.example:transitive:2.0",
+                         "requested": "org.example:transitive:2.0", "constraint": False},
+                    ],
+                    "failures": [],
+                }],
+            }],
+        }
+        rows, failures = parse_gradle_resolution_graph(json.dumps(graph))
+        self.assertEqual([], failures)
+        by_name = {row["name"]: row for row in rows}
+        self.assertEqual("direct", by_name["org.example:direct"]["dependency_type"])
+        self.assertEqual("transitive", by_name["org.example:transitive"]["dependency_type"])
+        self.assertEqual(["runtimeClasspath"], by_name["org.example:direct"]["configurations"])
+        self.assertEqual("org.example:transitive:2.0",
+                         by_name["org.example:direct"]["edges"][0]["requested"])
+
+    def test_gradle_native_resolution_graph_rejects_unknown_schema(self):
+        from audit_dependencies import parse_gradle_resolution_graph
+        with self.assertRaises(ValueError):
+            parse_gradle_resolution_graph('{"schemaVersion": 99, "projects": []}')
+
     def test_gradle_version_catalog_library_plugin_and_version_refs(self):
         from audit_dependencies import parse_gradle_version_catalog
         content = '''[versions]
@@ -622,7 +662,8 @@ packages:
             (root / "gradle.lockfile").write_text(
                 "org.example:library:2.4.1=runtimeClasspath\n", encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
-            self.assertEqual([], unresolved)
+            self.assertEqual(1, len(unresolved))
+            self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
             self.assertEqual(1, len(rows))
             self.assertEqual("gradle", rows[0]["ecosystem"])
             self.assertEqual("org.example:library", rows[0]["name"])
@@ -665,7 +706,8 @@ packages:
                 "org.example:shared:3.0=testRuntimeClasspath\n",
                 encoding="utf-8")
             rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
-            self.assertEqual([], unresolved)
+            self.assertEqual(1, len(unresolved))
+            self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
             by_name = {row["name"]: row for row in rows}
             self.assertEqual({"org.example:root-lib", "org.example:app-lib",
                               "org.example:shared"}, set(by_name))
