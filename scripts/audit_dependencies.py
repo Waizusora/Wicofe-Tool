@@ -120,10 +120,78 @@ def license_alternatives(expression: str | None) -> list[str]:
             if is_permissive_license_branch(branch)]
 
 
+def is_valid_spdx_expression(expression: str) -> bool:
+    """Validate SPDX expression grammar; identifier catalog/legal interpretation is separate."""
+    token_pattern = re.compile(
+        r"(?:DocumentRef-[A-Za-z0-9.-]+:)?LicenseRef-[A-Za-z0-9.-]+|"
+        r"[A-Za-z0-9][A-Za-z0-9.+-]*|[()]"
+    )
+    tokens = []
+    position = 0
+    for match in token_pattern.finditer(expression):
+        if expression[position:match.start()].strip():
+            return False
+        tokens.append(match.group(0))
+        position = match.end()
+    if expression[position:].strip() or not tokens:
+        return False
+    index = 0
+
+    def peek() -> str | None:
+        return tokens[index] if index < len(tokens) else None
+
+    def consume(expected: str | None = None) -> str | None:
+        nonlocal index
+        token = peek()
+        if token is None or (expected is not None and token.upper() != expected):
+            return None
+        index += 1
+        return token
+
+    def parse_primary() -> bool:
+        if consume("("):
+            if not parse_or() or consume(")") is None:
+                return False
+            return True
+        token = peek()
+        if token is None or token.upper() in {"AND", "OR", "WITH"} or token in {")", "("}:
+            return False
+        consume()
+        if peek() and peek().upper() == "WITH":
+            consume("WITH")
+            exception = peek()
+            if exception is None or exception.upper() in {"AND", "OR", "WITH"} or exception in {"(", ")"}:
+                return False
+            consume()
+        return True
+
+    def parse_and() -> bool:
+        if not parse_primary():
+            return False
+        while peek() and peek().upper() == "AND":
+            consume("AND")
+            if not parse_primary():
+                return False
+        return True
+
+    def parse_or() -> bool:
+        if not parse_and():
+            return False
+        while peek() and peek().upper() == "OR":
+            consume("OR")
+            if not parse_and():
+                return False
+        return True
+
+    return parse_or() and index == len(tokens)
+
+
 def classify_license(expression: str | None) -> str:
     """Conservative SPDX/Debian expression trigger classification; not a legal parser."""
     if not expression or not expression.strip():
         return "UNKNOWN"
+    if not is_valid_spdx_expression(expression):
+        return "INVALID_EXPRESSION"
     branches = split_top_level_or(expression)
     has_agpl = any("AGPL" in branch.upper() for branch in branches)
     has_gpl = any(_branch_has_prohibited_license(branch) and "AGPL" not in branch.upper()
@@ -153,6 +221,8 @@ def license_decision_status(expression: str | None,
         return "REJECTED"
     if category == "UNKNOWN":
         return "UNKNOWN"
+    if category == "INVALID_EXPRESSION":
+        return "NEEDS_REVIEW"
     if not decision:
         return "NEEDS_REVIEW"
     if decision.get("status") == "rejected":
