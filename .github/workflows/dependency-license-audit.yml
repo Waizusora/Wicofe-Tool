@@ -27,7 +27,7 @@ jobs:
           fi
       - name: Generate dependency inventory and enforce policy
         run: |
-          set -- --workspace . --repository Wicofe-Tools \
+          set -- --workspace . --repository Wicofe-Tool \
             --decisions config/dependency_license_decisions.example.json \
             --evidence config/upstream_license_evidence.json \
             --json reports/dependency-audit.json \
