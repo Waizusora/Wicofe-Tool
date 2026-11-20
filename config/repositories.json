@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "owner": "Waizusora",
-  "policy": "README.md is required in every listed repository. Missing LICENSE is reported as a warning until the repository's licensing status is resolved; this check does not determine license compatibility. The canonical 29-repository set must match config/repository_inventory.txt.",
+  "policy": "README.md is required in every listed repository. Missing LICENSE is reported as a warning until the repository's licensing status is resolved; this check does not determine license compatibility. The canonical 29-repository set must match config/repository_inventory.txt. WLibc is the canonical repository name; Wicofe-Libc is a historical redirect and is not a separate checkout.",
   "repositories": [
     "Wicofe",
     "Wicofe-Doc",
