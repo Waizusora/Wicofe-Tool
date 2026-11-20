@@ -23,7 +23,7 @@ This directory documents project-wide development, maintenance, validation, and 
 
 ## Ownership
 
-Component-specific tools should remain with their component when they require private implementation details. Wicofe-Tools owns shared project automation consumed by multiple repositories. Whole-system build orchestration belongs to [Wicofe-Build](https://github.com/Waizusora/Wicofe-Build). ONWFS-specific format tools belong to [ONWFS](https://github.com/Waizusora/ONWFS), image construction to [Wicofe-Image](https://github.com/Waizusora/Wicofe-Image), and canonical cross-repository test suites to [Wicofe-Tests](https://github.com/Waizusora/Wicofe-Tests).
+Component-specific tools should remain with their component when they require private implementation details. Wicofe-Tool owns shared project automation consumed by multiple repositories. Whole-system build orchestration belongs to [Wicofe-Build](https://github.com/Waizusora/Wicofe-Build). ONWFS-specific format tools belong to [ONWFS](https://github.com/Waizusora/ONWFS), image construction to [Wicofe-Image](https://github.com/Waizusora/Wicofe-Image), and canonical cross-repository test suites to [Wicofe-Test](https://github.com/Waizusora/Wicofe-Test).
 
 ## Tool requirements
 
