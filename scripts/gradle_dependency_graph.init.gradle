@@ -1,0 +1,93 @@
+import groovy.json.JsonOutput
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
+
+gradle.rootProject { root ->
+    root.tasks.register("wicofeExportGradleDependencyGraph") {
+        group = "verification"
+        description = "Exports resolved dependency components and edges for Wicofe license auditing."
+
+        doLast {
+            def outputValue = root.findProperty("wicofeDependencyGraphOutput")
+            if (!outputValue) {
+                throw new GradleException("Missing -PwicofeDependencyGraphOutput=<path>")
+            }
+
+            def projects = []
+            root.allprojects.sort { it.path }.each { project ->
+                def configurations = []
+                project.configurations.findAll { it.canBeResolved }.sort { it.name }.each { configuration ->
+                    def entry = [
+                        name: configuration.name,
+                        components: [],
+                        edges: [],
+                        failures: []
+                    ]
+                    try {
+                        def resolution = configuration.incoming.resolutionResult
+                        def rootComponent = resolution.root
+                        def queue = [rootComponent]
+                        def visited = [] as Set
+                        def componentMap = [:]
+
+                        while (!queue.isEmpty()) {
+                            def component = queue.remove(0)
+                            def componentId = component.id.displayName
+                            if (!visited.add(componentId)) {
+                                continue
+                            }
+
+                            def identifier = component.id
+                            def item = [id: componentId, displayName: componentId]
+                            if (identifier.hasProperty("group") &&
+                                identifier.hasProperty("module") &&
+                                identifier.hasProperty("version")) {
+                                item.group = identifier.group
+                                item.module = identifier.module
+                                item.version = identifier.version
+                                item.kind = "module"
+                            } else if (identifier.hasProperty("projectPath")) {
+                                item.projectPath = identifier.projectPath
+                                item.kind = "project"
+                            } else {
+                                item.kind = "other"
+                            }
+                            componentMap[componentId] = item
+
+                            component.dependencies.each { dependency ->
+                                if (dependency instanceof ResolvedDependencyResult) {
+                                    def selectedId = dependency.selected.id.displayName
+                                    def edge = [
+                                        from: componentId,
+                                        to: selectedId,
+                                        requested: dependency.requested.displayName,
+                                        selected: selectedId,
+                                        constraint: (dependency.hasProperty("constraint") ?
+                                            dependency.constraint : false)
+                                    ]
+                                    entry.edges << edge
+                                    queue << dependency.selected
+                                } else {
+                                    entry.failures << [
+                                        requested: dependency.requested.displayName,
+                                        reason: dependency.failure?.message ?: "unresolved dependency"
+                                    ]
+                                }
+                            }
+                        }
+
+                        entry.components = componentMap.values().sort { it.id }
+                    } catch (Exception failure) {
+                        entry.failures << [reason: failure.class.name + ": " + failure.message]
+                    }
+                    configurations << entry
+                }
+                projects << [path: project.path, configurations: configurations]
+            }
+
+            def document = [schemaVersion: 1, projects: projects]
+            def output = new File(outputValue.toString())
+            output.parentFile.mkdirs()
+            output.setText(JsonOutput.prettyPrint(JsonOutput.toJson(document)), "UTF-8")
+        }
+    }
+}
