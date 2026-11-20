@@ -56,6 +56,16 @@ class RepositoryDocsValidatorTests(unittest.TestCase):
         findings = scan_markdown_file(path, self.root, [])
         self.assertEqual([], findings)
 
+    def test_github_tree_directory_link_is_valid_without_index(self) -> None:
+        (self.root / "Other" / "src").mkdir()
+        path = self.root / "Repo" / "README.md"
+        path.write_text(
+            "[Source](https://github.com/Waizusora/Other/tree/main/src)\n",
+            encoding="utf-8",
+        )
+        findings = scan_markdown_file(path, self.root, [])
+        self.assertEqual([], findings)
+
     def test_missing_cross_repository_github_target_is_reported(self) -> None:
         path = self.root / "Repo" / "README.md"
         path.write_text(
