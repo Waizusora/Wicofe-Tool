@@ -114,6 +114,8 @@ jobs:
         with:
           name: wicofe-cross-repository-dependency-audit
           path: |
+            reports/manifest-coverage.json
+            reports/manifest-coverage.md
             reports/dependencies/
             reports/cargo-metadata/
           if-no-files-found: warn
