@@ -592,6 +592,29 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             unresolved.append({"path": relative, "ecosystem": "python",
                                "reason": f"pip resolver failed: {exc}"})
 
+    # Gradle lockfiles pin the resolved module coordinates without executing build scripts.
+    gradle_lock_paths = [(workspace / p) for p, e in paths.items() if e == "gradle-lock"]
+    for path in gradle_lock_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                coordinate, separator, configurations = line.partition("=")
+                parts = coordinate.split(":")
+                if len(parts) != 3 or not separator or not configurations.strip():
+                    unresolved.append({"path": relative, "ecosystem": "gradle",
+                                       "reason": f"invalid Gradle lock entry at line {line_number}"})
+                    continue
+                group, artifact, version = parts
+                dependencies.append(_resolved_dependency_record(
+                    "gradle", f"{group}:{artifact}", version, repository,
+                    decisions, upstream_evidence, "locked", relative, None))
+        except (OSError, UnicodeError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "gradle",
+                               "reason": f"cannot read Gradle lockfile: {exc}"})
+
     # Go's module graph is emitted as concatenated JSON objects.
     go_manifests = [p for p, e in paths.items() if e == "go"]
     for relative in go_manifests:
@@ -609,7 +632,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                 source = replacement.get("Dir") or replacement.get("Path") or name
                 dependencies.append(_resolved_dependency_record(
                     "go", name, str(version), repository, decisions, upstream_evidence,
-                    "direct" if module.get("Main") else "transitive", source,
+                    "transitive" if module.get("Indirect") else "direct", source,
                     (module.get("Sum") or None)))
         except (OSError, UnicodeError, subprocess.SubprocessError, RuntimeError,
                 json.JSONDecodeError, ValueError) as exc:
@@ -618,7 +641,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
-               "python-requirements", "python-constraints", "go", "go-lock", "go-workspace"}
+               "python-requirements", "python-constraints", "go", "go-lock", "go-workspace", "gradle-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
     requirement_dirs = {(workspace / p).parent for p, e in paths.items()
@@ -630,6 +653,14 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                 continue
             if ecosystem == "go-lock" and path.parent in go_dirs:
                 continue
+            if ecosystem == "gradle-lock":
+                continue
+            if ecosystem == "python-constraints" and path.parent not in requirement_dirs:
+                unresolved.append({"path": relative, "ecosystem": ecosystem,
+                                   "reason": "constraints file has no requirements input"})
+            if ecosystem == "go-lock" and path.parent not in go_dirs:
+                unresolved.append({"path": relative, "ecosystem": ecosystem,
+                                   "reason": "go.sum has no adjacent go.mod"})
             continue
         if ecosystem == "npm" and path.parent in npm_lock_dirs:
             continue
