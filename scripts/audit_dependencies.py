@@ -643,6 +643,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
                "python-requirements", "python-constraints", "go", "go-lock", "go-workspace", "gradle-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
+    gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
     requirement_dirs = {(workspace / p).parent for p, e in paths.items()
                         if e == "python-requirements"}
@@ -663,6 +664,8 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                    "reason": "go.sum has no adjacent go.mod"})
             continue
         if ecosystem == "npm" and path.parent in npm_lock_dirs:
+            continue
+        if ecosystem == "gradle" and path.parent in gradle_lock_dirs:
             continue
         unresolved.append({"path": relative, "ecosystem": ecosystem,
                            "reason": "no native resolver adapter is implemented yet"})
