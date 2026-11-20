@@ -27,3 +27,4 @@ Wicofe-Update
 Wicofe-Recovery
 Wicofe-SDK
 Wicofe-Port
+WLibc
