@@ -884,8 +884,18 @@ packages:
                 encoding="utf-8")
             wrapper.chmod(0o755)
 
-            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            coverage = []
+            rows, unresolved = resolve_non_cargo_manifests(
+                root, "fixture", {}, {}, coverage)
             self.assertEqual(1, len(unresolved))
+            self.assertEqual([
+                {"project": ":", "configuration": "runtimeClasspath",
+                 "status": "RESOLVED", "component_count": 2, "edge_count": 1,
+                 "failure_reasons": []},
+                {"project": ":", "configuration": "testRuntimeClasspath",
+                 "status": "FAILED", "component_count": 0, "edge_count": 0,
+                 "failure_reasons": ["test resolution failed"]},
+            ], coverage)
             by_name = {row["name"]: row for row in rows}
             self.assertEqual({"org.example:native-lib", "org.example:lock-only"},
                              set(by_name))
