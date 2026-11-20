@@ -981,6 +981,16 @@ def parse_gradle_lockfile(content: str) -> list[dict[str, str]]:
     ]
 
 
+def parse_gradle_resolution_features(content: str) -> list[str]:
+    """Identify Gradle resolution constructs not represented by gradle.lockfile."""
+    patterns = (
+        ("dependency constraints", re.compile(r"\\bconstraints\\s*\\{", re.IGNORECASE)),
+        ("platform/BOM dependencies", re.compile(r"\\b(?:enforcedPlatform|platform)\\s*\\(", re.IGNORECASE)),
+        ("dependency substitution", re.compile(r"\\b(?:dependencySubstitution|substitute\\s*\\(\\s*(?:module|project)\\s*\\()", re.IGNORECASE)),
+    )
+    return [label for label, pattern in patterns if pattern.search(content)]
+
+
 def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
     """Read Gradle version-catalog library/plugin declarations, not resolved artifacts."""
     data = tomllib.loads(content)
@@ -1327,9 +1337,20 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                         if e == "python-requirements"}
     for relative, ecosystem in paths.items():
         path = workspace / relative
+        if ecosystem == "gradle":
+            try:
+                features = parse_gradle_resolution_features(path.read_text(encoding="utf-8"))
+                if features and path.parent in gradle_lock_dirs:
+                    unresolved.append({
+                        "path": relative, "ecosystem": "gradle",
+                        "reason": ("gradle.lockfile does not encode the full Gradle resolution model: "
+                                   + ", ".join(features))
+                    })
+            except (OSError, UnicodeError) as exc:
+                unresolved.append({"path": relative, "ecosystem": "gradle",
+                                   "reason": f"Gradle build model inspection failed: {exc}"})
         if ecosystem in handled:
-            if ecosystem == "python-constraints" and path.parent in requirement_dirs:
-                continue
+            if ecosystem == "python-constraints" and path.parent in requirement_dirs:                continue
             if ecosystem == "go-lock" and path.parent in go_dirs:
                 continue
             if ecosystem == "gradle-lock":
