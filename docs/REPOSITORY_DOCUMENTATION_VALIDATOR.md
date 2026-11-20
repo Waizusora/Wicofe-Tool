@@ -1,6 +1,6 @@
 # Repository Documentation Validator
 
-**Status:** Initial local CLI implemented; external-link and repository-metadata checks are not included.
+**Status:** Local Markdown and canonical Waizusora cross-repository link checks are implemented; arbitrary external HTTP links and repository metadata checks are not included.
 
 ## Purpose
 
@@ -15,7 +15,7 @@ Place repositories under one common directory. The canonical expected set of 29 
 ```sh
 python3 scripts/validate_repository_docs.py ../workspace
 python3 scripts/validate_repository_docs.py ../workspace --forbid-term MYPK
-python3 scripts/validate_repository_docs.py ../workspace --forbid-term MYPK --exclude 'Wicofe-Docs/docs/archive/**'
+python3 scripts/validate_repository_docs.py ../workspace --forbid-term MYPK --exclude 'Wicofe-Doc/docs/archive/**'
 ```
 
 ## Checks
