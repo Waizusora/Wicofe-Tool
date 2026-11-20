@@ -1213,6 +1213,42 @@ def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
     return rows
 
 
+
+def summarize_gradle_configuration_coverage(
+        coverage: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate per-configuration evidence without treating absent projects as resolved."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in coverage:
+        project = str(item.get("project", ":"))
+        grouped.setdefault(project, []).append(item)
+
+    summaries: list[dict[str, Any]] = []
+    for project, configurations in sorted(grouped.items()):
+        resolved = [item for item in configurations if item.get("status") == "RESOLVED"]
+        failed = [item for item in configurations if item.get("status") == "FAILED"]
+        if resolved and failed:
+            status = "PARTIAL"
+        elif failed:
+            status = "FAILED"
+        else:
+            status = "COMPLETE"
+        summaries.append({
+            "project": project,
+            "status": status,
+            "configuration_count": len(configurations),
+            "resolved_count": len(resolved),
+            "failed_count": len(failed),
+            "component_count": sum(int(item.get("component_count", 0)) for item in configurations),
+            "edge_count": sum(int(item.get("edge_count", 0)) for item in configurations),
+            "failure_reasons": sorted({
+                str(reason)
+                for item in failed
+                for reason in item.get("failure_reasons", [])
+            }),
+        })
+    return summaries
+
+
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
                                 upstream_evidence: dict[str, dict[str, Any]],
@@ -2253,6 +2289,7 @@ def main(argv: list[str] | None = None) -> int:
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
                   "manifests": manifests, "build_scripts": build_scripts, "assets": assets,
+"gradle_project_configuration_coverage": summarize_gradle_configuration_coverage(gradle_coverage),
                   "gradle_configuration_coverage": sorted(
                       gradle_coverage,
                       key=lambda item: (item["project"], item["configuration"]),
