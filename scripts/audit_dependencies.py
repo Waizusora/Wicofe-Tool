@@ -1435,7 +1435,11 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                         "path": relative_root, "ecosystem": "gradle",
                         "reason": f"Gradle native graph incomplete: {failure}",
                     })
-                native_gradle_roots.add(root)
+                # A graph with any failed configuration is partial. Keep the
+                # lockfile fallback enabled for this root instead of treating it
+                # as a complete native capture.
+                if not graph_failures:
+                    native_gradle_roots.add(root)
         except (OSError, UnicodeError, json.JSONDecodeError,
                 subprocess.SubprocessError, RuntimeError, ValueError) as exc:
             unresolved.append({
@@ -1446,15 +1450,44 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     # Preserve project-scoped lockfile evidence where no native model was captured.
     gradle_lock_paths = [(workspace / p) for p, e in paths.items() if e == "gradle-lock"]
     for path in gradle_lock_paths:
-        if any(root == path.parent or root in path.parents for root in native_gradle_roots):
-            continue
         relative = str(path.relative_to(workspace))
+        owning_roots = [root for root in selected_gradle_roots
+                        if path.parent == root or root in path.parents]
+        owning_root = max(owning_roots, key=lambda item: len(item.parts)) if owning_roots else None
+        if owning_root in native_gradle_roots:
+            continue
+        native_source = (
+            f"gradle-native:{owning_root.relative_to(workspace)}"
+            if owning_root is not None else None
+        )
         try:
             for package in parse_gradle_lockfile(path.read_text(encoding="utf-8")):
+                configurations = package["configurations"].split(",")
+                native_record = next((
+                    item for item in dependencies
+                    if item.get("ecosystem") == "gradle"
+                    and item.get("source") == native_source
+                    and item.get("name") == package["name"]
+                    and item.get("version") == package["version"]
+                ), None) if native_source else None
+                if native_record is not None:
+                    # Keep native graph coverage distinct from lockfile-only
+                    # configuration evidence; do not imply those configurations
+                    # were successfully resolved by the native graph.
+                    native_record["gradle_lockfile_configurations"] = sorted(
+                        set(native_record.get("gradle_lockfile_configurations", []))
+                        | set(configurations)
+                    )
+                    native_record["gradle_lockfile_sources"] = sorted(
+                        set(native_record.get("gradle_lockfile_sources", []))
+                        | {relative}
+                    )
+                    continue
                 record = _resolved_dependency_record(
                     "gradle", package["name"], package["version"], repository,
                     decisions, upstream_evidence, "locked", relative, None)
-                record["gradle_configurations"] = package["configurations"].split(",")
+                record["gradle_configurations"] = configurations
+                record["gradle_resolution_source"] = "lockfile_partial_fallback"
                 dependencies.append(record)
         except (OSError, UnicodeError, ValueError) as exc:
             unresolved.append({"path": relative, "ecosystem": "gradle",
