@@ -57,3 +57,32 @@ python3 -m unittest discover -s tests -v
 ## CI enforcement
 
 The local workflow runs unit tests and produces an informational inventory. The cross-repository workflow checks out all 29 repositories and runs strict enforcement; repositories with no manifests remain UNKNOWN until a human coverage attestation is supplied. Wicofe-Build now has a reusable/tag-triggered release dependency gate that invokes this workflow using an immutable workflow revision and a separately pinned auditor source revision. This is an integration point, not a completed end-to-end release pipeline: final-image publication is not yet wired to a successful strict audit, and final image SBOM reconciliation remains outstanding. The latest verified cross-repository run is BLOCKED, as required by the unresolved findings documented in Wicofe-ThirdParty.
+
+## Ecosystem resolver support
+
+The auditor resolves dependency versions with native ecosystem data and keeps
+license approval separate from graph resolution:
+
+- **Cargo:** `cargo metadata` in default and all-features modes; Cargo.lock
+  checksums and package metadata are retained.
+- **npm:** package-lock v2/v3 package graph, exact versions, registry source,
+  integrity value, and direct/transitive classification.
+- **Python:** pip `install --dry-run --ignore-installed --report` for
+  requirements files. No packages are installed by this resolver.
+- **Go:** `go list -m -json all` module graph and module checksums.
+- **Gradle, Maven, Nix, Bazel, Conda, Poetry, Bundler, Composer and other
+  discovered formats:** currently discovery-only and explicitly unresolved.
+
+A resolved version is not a license finding. The resolver consults the
+existing upstream evidence catalog and human decision registry using
+ecosystem-qualified keys (`npm:name:version`, `python:name:version`,
+`go:module-path:version`). Missing license evidence remains `UNKNOWN`;
+evidence without an approved decision remains subject to the policy gate.
+Resolver execution failures and unsupported manifests are recorded as
+unresolved and cause strict mode to fail.
+
+The Python adapter uses pip's dry-run report, so it can require network access
+to resolve uncached packages. The Go adapter uses the Go module tool and may
+also require network access. npm package-lock v2/v3 is parsed locally without
+running package lifecycle scripts. No resolver executes dependency build
+scripts as part of graph discovery.
