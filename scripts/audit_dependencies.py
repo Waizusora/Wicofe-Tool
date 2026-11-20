@@ -1215,7 +1215,8 @@ def parse_gradle_version_catalog(content: str) -> list[dict[str, str]]:
 
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
-                                upstream_evidence: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+                                upstream_evidence: dict[str, dict[str, Any]],
+                                gradle_coverage: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Resolve supported ecosystems using native lockfiles/tooling; retain explicit gaps."""
     import tempfile
     dependencies: list[dict[str, Any]] = []
@@ -1418,8 +1419,25 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                 )
                 if result.returncode != 0:
                     raise RuntimeError((result.stderr or result.stdout).strip()[-3000:])
-                graph_rows, graph_failures = parse_gradle_resolution_graph(
-                    output_path.read_text(encoding="utf-8"))
+                graph_content = output_path.read_text(encoding="utf-8")
+                graph_rows, graph_failures = parse_gradle_resolution_graph(graph_content)
+                if gradle_coverage is not None:
+                    graph_data = json.loads(graph_content)
+                    for project in graph_data["projects"]:
+                        project_path = str(project.get("path", ":"))
+                        for configuration in project["configurations"]:
+                            failures = configuration.get("failures", [])
+                            gradle_coverage.append({
+                                "project": project_path,
+                                "configuration": str(configuration.get("name", "UNKNOWN")),
+                                "status": "FAILED" if failures else "RESOLVED",
+                                "component_count": len(configuration.get("components", [])),
+                                "edge_count": len(configuration.get("edges", [])),
+                                "failure_reasons": [
+                                    str(item.get("reason", "unresolved Gradle dependency"))
+                                    for item in failures
+                                ],
+                            })
                 for package in graph_rows:
                     record = _resolved_dependency_record(
                         "gradle", package["name"], package["version"], repository,
@@ -2200,8 +2218,9 @@ def main(argv: list[str] | None = None) -> int:
         for metadata_path in sorted(metadata_paths):
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
+        gradle_coverage: list[dict[str, Any]] = []
         non_cargo_dependencies, non_cargo_unresolved = resolve_non_cargo_manifests(
-            workspace, repository, decisions, upstream_evidence)
+            workspace, repository, decisions, upstream_evidence, gradle_coverage)
         dependencies.extend(non_cargo_dependencies)
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
         dependencies.extend(build_dependencies)
@@ -2234,6 +2253,10 @@ def main(argv: list[str] | None = None) -> int:
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
                   "manifests": manifests, "build_scripts": build_scripts, "assets": assets,
+                  "gradle_configuration_coverage": sorted(
+                      gradle_coverage,
+                      key=lambda item: (item["project"], item["configuration"]),
+                  ),
                   "license_documents": license_documents, "submodules": submodules,
                   "summary": statuses,
                   "limitations": ["non-Cargo ecosystems are discovery-only in this version",
