@@ -527,6 +527,52 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
     manifests = scan_manifests(workspace, repository)
     paths = {item["path"]: item["ecosystem"] for item in manifests}
 
+    # Python lockfiles are authoritative version graphs; license approval is still separate.
+    python_lock_paths = [(workspace / p, e) for p, e in paths.items()
+                         if e in {"uv-lock", "poetry-lock", "pipenv-lock"}]
+    python_lock_dirs = {path.parent for path, _ in python_lock_paths}
+    for path, ecosystem in python_lock_paths:
+        relative = str(path.relative_to(workspace))
+        try:
+            if ecosystem in {"uv-lock", "poetry-lock"}:
+                data = tomllib.loads(path.read_text(encoding="utf-8"))
+                packages = data.get("package", [])
+                for package in packages:
+                    name, version = package.get("name"), package.get("version")
+                    if not name or not version:
+                        unresolved.append({"path": relative, "ecosystem": "python",
+                                           "reason": "lock entry lacks package name/version"})
+                        continue
+                    source_data = package.get("source", {})
+                    source = (source_data.get("url") or source_data.get("registry")
+                              or source_data.get("reference") or ecosystem)
+                    hashes = []
+                    for item in package.get("wheels", []) + ([package["sdist"]]
+                                if package.get("sdist") else []) + package.get("files", []):
+                        digest = item.get("hash")
+                        if digest:
+                            hashes.append(digest)
+                    dependencies.append(_resolved_dependency_record(
+                        "python", name, str(version), repository, decisions, upstream_evidence,
+                        "locked", source, ",".join(sorted(set(hashes))) or None))
+            else:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                for section in ("default", "develop"):
+                    for name, package in sorted(data.get(section, {}).items()):
+                        version = str(package.get("version", "")).lstrip("=")
+                        if not version:
+                            unresolved.append({"path": relative, "ecosystem": "python",
+                                               "reason": f"Pipenv entry {name} has no locked version"})
+                            continue
+                        hashes = ",".join(sorted(package.get("hashes", []))) or None
+                        dependencies.append(_resolved_dependency_record(
+                            "python", name, version, repository, decisions, upstream_evidence,
+                            "locked", "Pipfile.lock", hashes))
+        except (OSError, UnicodeError, json.JSONDecodeError, tomllib.TOMLDecodeError,
+                TypeError, ValueError) as exc:
+            unresolved.append({"path": relative, "ecosystem": "python",
+                               "reason": f"Python lockfile parse failed: {exc}"})
+
     # npm lockfile v2/v3 contains the complete package graph and exact versions.
     for relative, ecosystem in paths.items():
         if ecosystem != "npm-lock":
@@ -647,7 +693,7 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
 
     # These ecosystems are discovered, but their graph/license adapters are not yet implemented.
     handled = {"cargo", "cargo-lock", "rust-toolchain", "npm-lock",
-               "python-requirements", "python-constraints", "go", "go-lock", "go-workspace", "gradle-lock"}
+               "python-requirements", "python-constraints", "uv-lock", "poetry-lock", "pipenv-lock", "go", "go-lock", "go-workspace", "gradle-lock"}
     npm_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "npm-lock"}
     gradle_lock_dirs = {(workspace / p).parent for p, e in paths.items() if e == "gradle-lock"}
     go_dirs = {(workspace / p).parent for p, e in paths.items() if e == "go"}
@@ -665,11 +711,17 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
             if ecosystem == "python-constraints" and path.parent not in requirement_dirs:
                 unresolved.append({"path": relative, "ecosystem": ecosystem,
                                    "reason": "constraints file has no requirements input"})
+            if ecosystem == "python-requirements" and path.parent in python_lock_dirs:
+                continue
+            if ecosystem == "python-constraints" and path.parent in python_lock_dirs:
+                continue
             if ecosystem == "go-lock" and path.parent not in go_dirs:
                 unresolved.append({"path": relative, "ecosystem": ecosystem,
                                    "reason": "go.sum has no adjacent go.mod"})
             continue
         if ecosystem == "npm" and path.parent in npm_lock_dirs:
+            continue
+        if ecosystem in {"python", "pipenv"} and path.parent in python_lock_dirs:
             continue
         if ecosystem == "gradle" and path.parent in gradle_lock_dirs:
             continue
