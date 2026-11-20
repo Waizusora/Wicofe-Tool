@@ -9,7 +9,6 @@ This directory documents project-wide development, maintenance, validation, and 
 - [Dependency audit findings (2026-11-20)](DEPENDENCY_AUDIT_FINDINGS_2026-11-20.md)
 - [Repository dependency manifest coverage review](REPOSITORY_DEPENDENCY_MANIFEST_COVERAGE.md) — supported manifest discovery across the canonical 29 repositories.
 - [Dependency License Auditor](DEPENDENCY_LICENSE_AUDITOR.md) — Cargo, npm, Python requirements, and Go resolver behavior, with explicit unresolved status for unsupported ecosystems.
-- [Dependency License Auditor](DEPENDENCY_LICENSE_AUDITOR.md) — resolves Cargo dependency metadata, inventories manifests, build-time actions and assets, applies scoped human decisions, and fails closed on unresolved evidence.
 - [Dependency License CI Enforcement](DEPENDENCY_LICENSE_CI_ENFORCEMENT.md) — documents local and 29-repository workflows, strict-gate semantics, and release integration boundaries.
 - [Upstream license evidence catalog](../config/upstream_license_evidence.json) — immutable source snapshots and license-file evidence; not approvals.
 - [Debian package license inventory](../scripts/audit_dpkg_packages.py) — extracts package versions and Debian copyright evidence from CI runner package deltas.
