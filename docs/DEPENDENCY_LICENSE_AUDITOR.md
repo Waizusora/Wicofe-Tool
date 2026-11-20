@@ -71,8 +71,11 @@ license approval separate from graph resolution:
   requirements files, plus exact-version parsing for uv, Poetry and Pipenv
   lockfiles. No packages are installed by this resolver.
 - **Go:** `go list -m -json all` module graph and module checksums.
-- **Gradle:** exact module coordinates from `gradle.lockfile`; Gradle build
-  files without an adjacent lockfile remain unresolved.
+- **Gradle:** exact module coordinates from each project-scoped `gradle.lockfile`
+  are inventoried, including root and subproject lockfiles. Repeated module entries
+  merge their configuration sets; the report retains the lockfile path and sorted
+  configuration names. The `empty=` sentinel is accepted as an empty lock state.
+  Gradle build files without a corresponding lockfile remain unresolved.
 - **Gradle:** `gradle.lockfile` records locked coordinates; `libs.versions.toml` is separately inventoried as declaration-only evidence. Catalog entries are never treated as resolved/used dependencies or license approval.\n- **Maven:** dependency graph from the pinned Maven dependency plugin's TGF output; the adapter invokes only the dependency-tree goal, not the project lifecycle.
 - **Nix:** reachable flake inputs from `flake.lock`, retaining locked revisions and nar hashes. `follows` input forms not handled by the current adapter remain unresolved.
 - **Bazel:** reachable Bzlmod modules from `MODULE.bazel.lock`; legacy or unsupported lock schemas remain unresolved.
