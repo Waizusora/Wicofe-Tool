@@ -1089,5 +1089,28 @@ configurations.configureEach {
             self.assertEqual("gradle", unresolved[0]["ecosystem"])
             self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
 
+
+    def test_toolchain_provenance_records_explicit_versions_and_runner_labels(self):
+        from audit_dependencies import scan_toolchain_provenance
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflows = root / ".github" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "ci.yml").write_text(
+                "jobs:\\n  build:\\n    runs-on: ubuntu-24.04\\n"
+                "    steps:\\n      - uses: gradle/actions/setup-gradle@sha\\n"
+                "        with:\\n          gradle-version: \\\"8.10.2\\\"\\n"
+                "          java-version: \\\"17\\\"\\n",
+                encoding="utf-8")
+            rows = scan_toolchain_provenance(root)
+            gradle = next(row for row in rows if row["tool"] == "gradle")
+            java = next(row for row in rows if row["tool"] == "java")
+            runner = next(row for row in rows if row["tool"] == "github-hosted-runner")
+            self.assertEqual("8.10.2", gradle["version"])
+            self.assertEqual("EXPLICIT_VERSION", gradle["pin_status"])
+            self.assertEqual("17", java["version"])
+            self.assertEqual("VERSIONED_IMAGE_LABEL", runner["pin_status"])
+            self.assertEqual(".github/workflows/ci.yml", gradle["path"])
+
 if __name__ == "__main__":
     unittest.main()
