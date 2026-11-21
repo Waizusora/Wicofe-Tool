@@ -1252,7 +1252,8 @@ def summarize_gradle_configuration_coverage(
 def resolve_non_cargo_manifests(workspace: Path, repository: str,
                                 decisions: dict[str, dict[str, Any]],
                                 upstream_evidence: dict[str, dict[str, Any]],
-                                gradle_coverage: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+                                gradle_coverage: list[dict[str, Any]] | None = None,
+                                gradle_project_coverage: list[dict[str, Any]] | None = None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Resolve supported ecosystems using native lockfiles/tooling; retain explicit gaps."""
     import tempfile
     dependencies: list[dict[str, Any]] = []
@@ -1457,10 +1458,34 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                     raise RuntimeError((result.stderr or result.stdout).strip()[-3000:])
                 graph_content = output_path.read_text(encoding="utf-8")
                 graph_rows, graph_failures = parse_gradle_resolution_graph(graph_content)
-                if gradle_coverage is not None:
-                    graph_data = json.loads(graph_content)
-                    for project in graph_data["projects"]:
-                        project_path = str(project.get("path", ":"))
+                graph_data = json.loads(graph_content)
+                for project in graph_data["projects"]:
+                    project_path = str(project.get("path", ":"))
+                    inventory = project.get("resolvableConfigurations", [])
+                    exported = [
+                        str(configuration.get("name", "UNKNOWN"))
+                        for configuration in project.get("configurations", [])
+                    ]
+                    missing = sorted(set(inventory) - set(exported))
+                    enumeration_failure = project.get("configurationEnumerationFailure")
+                    if gradle_project_coverage is not None:
+                        if enumeration_failure:
+                            project_status = "UNAVAILABLE"
+                        elif missing:
+                            project_status = "PARTIAL"
+                        elif not inventory:
+                            project_status = "NO_RESOLVABLE_CONFIGURATIONS"
+                        else:
+                            project_status = "COMPLETE"
+                        gradle_project_coverage.append({
+                            "project": project_path,
+                            "status": project_status,
+                            "resolvable_configuration_count": len(inventory),
+                            "exported_configuration_count": len(exported),
+                            "missing_configurations": missing,
+                            "configuration_enumeration_failure": enumeration_failure,
+                        })
+                    if gradle_coverage is not None:
                         for configuration in project["configurations"]:
                             failures = configuration.get("failures", [])
                             gradle_coverage.append({
@@ -2255,8 +2280,10 @@ def main(argv: list[str] | None = None) -> int:
             data = json.loads(metadata_path.read_text(encoding="utf-8"))
             dependencies.extend(cargo_records(data, repository, decisions, metadata_path.stem, lock_checksums))
         gradle_coverage: list[dict[str, Any]] = []
+        gradle_project_coverage: list[dict[str, Any]] = []
         non_cargo_dependencies, non_cargo_unresolved = resolve_non_cargo_manifests(
-            workspace, repository, decisions, upstream_evidence, gradle_coverage)
+            workspace, repository, decisions, upstream_evidence, gradle_coverage,
+            gradle_project_coverage)
         dependencies.extend(non_cargo_dependencies)
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
         dependencies.extend(build_dependencies)
@@ -2289,7 +2316,8 @@ def main(argv: list[str] | None = None) -> int:
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
                   "manifests": manifests, "build_scripts": build_scripts, "assets": assets,
-"gradle_project_configuration_coverage": summarize_gradle_configuration_coverage(gradle_coverage),
+"gradle_project_configuration_coverage": sorted(
+                       gradle_project_coverage, key=lambda item: item["project"]),
                   "gradle_configuration_coverage": sorted(
                       gradle_coverage,
                       key=lambda item: (item["project"], item["configuration"]),
