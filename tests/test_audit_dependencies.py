@@ -1096,7 +1096,7 @@ configurations.configureEach {
             root = Path(tmp)
             workflows = root / ".github" / "workflows"
             workflows.mkdir(parents=True)
-            (workflows / "ci.yml").write_text("\\n".join([
+            (workflows / "ci.yml").write_text("\n".join([
                 "jobs:", "  build:", "    runs-on: ubuntu-24.04",
                 "    steps:", "      - uses: gradle/actions/setup-gradle@sha",
                 "        with:", "          gradle-version: 8.10.2",
