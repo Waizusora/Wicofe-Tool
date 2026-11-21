@@ -2037,6 +2037,47 @@ def scan_build_scripts(workspace: Path, repository: str,
     return scripts, dependencies
 
 
+
+def scan_toolchain_provenance(workspace: Path) -> list[dict[str, Any]]:
+    """Record explicit workflow tool versions and their source locations."""
+    records: list[dict[str, Any]] = []
+    workflow_dir = workspace / ".github" / "workflows"
+    for path in sorted([*workflow_dir.glob("*.yml"), *workflow_dir.glob("*.yaml")]):
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        rel = str(path.relative_to(workspace))
+        for number, line in enumerate(lines, start=1):
+            match = re.match(r"""^\s*(gradle-version|java-version|python-version|rust-version):\s*['"]?([^'"]+?)['"]?\s*(?:#.*)?$""", line)
+            if match:
+                key, version = match.groups()
+                records.append({
+                    "tool": {"gradle-version": "gradle", "java-version": "java",
+                             "python-version": "python", "rust-version": "rust"}[key],
+                    "version": version.strip(),
+                    "pin_status": "EXPLICIT_VERSION" if version.strip() not in {"stable", "latest", "current"} else "FLOATING_CHANNEL",
+                    "source": "workflow-input", "path": rel, "line": number,
+                })
+            match = re.match(r"^\s*runs-on:\s*([^#]+)", line)
+            if match:
+                runner = match.group(1).strip().strip("'\"")
+                records.append({
+                    "tool": "github-hosted-runner", "version": runner,
+                    "pin_status": "VERSIONED_IMAGE_LABEL" if re.fullmatch(r"(?:ubuntu|windows|macos)-[0-9]+(?:\.[0-9]+)?", runner) else "FLOATING_OR_DYNAMIC",
+                    "source": "workflow-runs-on", "path": rel, "line": number,
+                })
+    rust_config = workspace / "rust-toolchain.toml"
+    if rust_config.is_file():
+        toolchain = tomllib.loads(rust_config.read_text(encoding="utf-8")).get("toolchain", {})
+        channel = str(toolchain.get("channel", "UNKNOWN"))
+        records.append({
+            "tool": "rust", "version": channel,
+            "pin_status": "EXPLICIT_VERSION" if re.fullmatch(r"\d+\.\d+\.\d+", channel) else "FLOATING_CHANNEL",
+            "source": "rust-toolchain.toml", "path": "rust-toolchain.toml", "line": 2,
+            "targets": toolchain.get("targets", []), "components": toolchain.get("components", []),
+        })
+    return sorted(records, key=lambda item: (item["path"], item["line"], item["tool"]))
+
+
+
 def scan_github_actions(workspace: Path, repository: str,
                        decisions: dict[str, dict[str, Any]],
                        upstream_evidence: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -2312,6 +2353,7 @@ def main(argv: list[str] | None = None) -> int:
             gradle_project_coverage)
         dependencies.extend(non_cargo_dependencies)
         build_scripts, build_dependencies = scan_build_scripts(workspace, repository, decisions, upstream_evidence)
+        toolchain_provenance = scan_toolchain_provenance(workspace)
         dependencies.extend(build_dependencies)
         dependencies.extend(scan_rust_toolchain(workspace, repository, decisions, upstream_evidence))
         dependencies.extend(scan_github_actions(workspace, repository, decisions, upstream_evidence))
@@ -2341,7 +2383,7 @@ def main(argv: list[str] | None = None) -> int:
                   "repository_commit": git_revision(workspace),
                   "generated_at": datetime.now(timezone.utc).isoformat(), "dependencies": dependencies,
                   "coverage_status": coverage_status, "coverage_decision": coverage_decision,
-                  "manifests": manifests, "build_scripts": build_scripts, "assets": assets,
+                  "manifests": manifests, "build_scripts": build_scripts, "toolchain_provenance": toolchain_provenance, "assets": assets,
 "gradle_project_configuration_coverage": sorted(
                        gradle_project_coverage, key=lambda item: item["project"]),
                   "gradle_configuration_coverage": sorted(
