@@ -896,7 +896,9 @@ packages:
                 "  case \"$arg\" in -PwicofeDependencyGraphOutput=*) output=\"${arg#*=}\" ;; esac\n"
                 "done\n"
                 "cat > \"$output\" <<'GRAPH'\n"
-                "{\"schemaVersion\":1,\"projects\":[{\"path\":\":\",\"configurations\":["
+                "{\"schemaVersion\":1,\"projects\":[{\"path\":\":\","
+                "\"resolvableConfigurations\":[\"compileClasspath\",\"runtimeClasspath\",\"testRuntimeClasspath\"],"
+                "\"configurations\":["
                 "{\"name\":\"runtimeClasspath\",\"rootComponent\":\"root\","
                 "\"components\":[{\"id\":\"root\",\"kind\":\"project\"},"
                 "{\"id\":\"org.example:native-lib:1.0\",\"kind\":\"module\","
@@ -911,9 +913,17 @@ packages:
             wrapper.chmod(0o755)
 
             coverage = []
+            project_coverage = []
             rows, unresolved = resolve_non_cargo_manifests(
-                root, "fixture", {}, {}, coverage)
+                root, "fixture", {}, {}, coverage, project_coverage)
             self.assertEqual(1, len(unresolved))
+            self.assertEqual([{
+                "project": ":", "status": "PARTIAL",
+                "resolvable_configuration_count": 3,
+                "exported_configuration_count": 2,
+                "missing_configurations": ["compileClasspath"],
+                "configuration_enumeration_failure": None,
+            }], project_coverage)
             self.assertEqual([
                 {"project": ":", "configuration": "runtimeClasspath",
                  "status": "RESOLVED", "component_count": 2, "edge_count": 1,
