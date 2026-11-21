@@ -1435,10 +1435,22 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
         wrapper = find_gradle_wrapper(workspace, root)
         gradle_command = [str(wrapper)] if wrapper else []
         if not gradle_command:
+            reason = (
+                "native Gradle graph unavailable: no repository Gradle wrapper "
+                "at project root or its ancestors; lockfile evidence is partial"
+            )
             unresolved.append({
-                "path": relative_root, "ecosystem": "gradle",
-                "reason": "native Gradle graph unavailable: no repository Gradle wrapper at project root or its ancestors; lockfile evidence is partial",
+                "path": relative_root, "ecosystem": "gradle", "reason": reason,
             })
+            if gradle_project_coverage is not None:
+                gradle_project_coverage.append({
+                    "project": ":" if relative_root == "." else relative_root,
+                    "status": "UNAVAILABLE",
+                    "resolvable_configuration_count": 0,
+                    "exported_configuration_count": 0,
+                    "missing_configurations": [],
+                    "configuration_enumeration_failure": reason,
+                })
             continue
         try:
             with tempfile.TemporaryDirectory(prefix="wicofe-gradle-audit-") as tmp:
@@ -1521,10 +1533,19 @@ def resolve_non_cargo_manifests(workspace: Path, repository: str,
                     native_gradle_roots.add(root)
         except (OSError, UnicodeError, json.JSONDecodeError,
                 subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+            reason = f"Gradle native resolver failed: {exc}"
             unresolved.append({
-                "path": relative_root, "ecosystem": "gradle",
-                "reason": f"Gradle native resolver failed: {exc}",
+                "path": relative_root, "ecosystem": "gradle", "reason": reason,
             })
+            if gradle_project_coverage is not None:
+                gradle_project_coverage.append({
+                    "project": ":" if relative_root == "." else relative_root,
+                    "status": "UNAVAILABLE",
+                    "resolvable_configuration_count": 0,
+                    "exported_configuration_count": 0,
+                    "missing_configurations": [],
+                    "configuration_enumeration_failure": reason,
+                })
 
     # Preserve project-scoped lockfile evidence where no native model was captured.
     gradle_lock_paths = [(workspace / p) for p, e in paths.items() if e == "gradle-lock"]
