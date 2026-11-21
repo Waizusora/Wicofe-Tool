@@ -1096,12 +1096,12 @@ configurations.configureEach {
             root = Path(tmp)
             workflows = root / ".github" / "workflows"
             workflows.mkdir(parents=True)
-            (workflows / "ci.yml").write_text(
-                "jobs:\n  build:\n    runs-on: ubuntu-24.04\n"
-                "    steps:\n      - uses: gradle/actions/setup-gradle@sha\n"
-                "        with:\n          gradle-version: \\\"8.10.2\\\"\n"
-                "          java-version: \\\"17\\\"\n",
-                encoding="utf-8")
+            (workflows / "ci.yml").write_text("\\n".join([
+                "jobs:", "  build:", "    runs-on: ubuntu-24.04",
+                "    steps:", "      - uses: gradle/actions/setup-gradle@sha",
+                "        with:", "          gradle-version: 8.10.2",
+                "          java-version: 17", "",
+            ]), encoding="utf-8")
             rows = scan_toolchain_provenance(root)
             gradle = next(row for row in rows if row["tool"] == "gradle")
             java = next(row for row in rows if row["tool"] == "java")
