@@ -36,17 +36,18 @@ gradle.rootProject { root ->
             root.allprojects.sort { it.path }.each { project ->
                 def configurations = []
                 def configurationInventory = []
+                def resolvableConfigurations = []
                 def configurationEnumerationFailure = null
                 try {
-                    configurationInventory = project.configurations
+                    resolvableConfigurations = project.configurations
                         .findAll { it.canBeResolved }
-                        .collect { it.name }
-                        .sort()
+                        .sort { it.name }
+                    configurationInventory = resolvableConfigurations.collect { it.name }
                 } catch (Exception failure) {
                     configurationEnumerationFailure =
                         failure.class.name + ": " + failure.message
                 }
-                project.configurations.findAll { it.canBeResolved }.sort { it.name }.each { configuration ->
+                resolvableConfigurations.each { configuration ->
                     def entry = [
                         name: configuration.name,
                         rootComponent: null,
