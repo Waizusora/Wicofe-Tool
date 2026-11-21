@@ -837,9 +837,19 @@ packages:
                 "org.example:shared:3.0=compileClasspath\n"
                 "org.example:shared:3.0=testRuntimeClasspath\n",
                 encoding="utf-8")
-            rows, unresolved = resolve_non_cargo_manifests(root, "fixture", {}, {})
+            project_coverage = []
+            rows, unresolved = resolve_non_cargo_manifests(
+                root, "fixture", {}, {}, gradle_project_coverage=project_coverage)
             self.assertEqual(1, len(unresolved))
             self.assertIn("native Gradle graph unavailable", unresolved[0]["reason"])
+            self.assertEqual([{
+                "project": ":",
+                "status": "UNAVAILABLE",
+                "resolvable_configuration_count": 0,
+                "exported_configuration_count": 0,
+                "missing_configurations": [],
+                "configuration_enumeration_failure": unresolved[0]["reason"],
+            }], project_coverage)
             by_name = {row["name"]: row for row in rows}
             self.assertEqual({"org.example:root-lib", "org.example:app-lib",
                               "org.example:shared"}, set(by_name))
