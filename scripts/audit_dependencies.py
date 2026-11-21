@@ -595,6 +595,11 @@ def scan_manifests(workspace: Path, repository: str) -> list[dict[str, Any]]:
     for path in sorted(workspace.rglob("*")):
         if not path.is_file() or any(part in excluded for part in path.parts):
             continue
+        relative_parts = path.relative_to(workspace).parts
+        if any(relative_parts[index:index + 2] in {
+            ("tests", "fixtures"), ("test", "fixtures")
+        } for index in range(max(0, len(relative_parts) - 1))):
+            continue
         ecosystem = manifest_ecosystem(path)
         if ecosystem:
             found.append({"repository": repository, "path": str(path.relative_to(workspace)),
