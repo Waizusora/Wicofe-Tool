@@ -473,6 +473,18 @@ packages:
             found = scan_manifests(root, "fixture")
             self.assertEqual({"python", "gradle"}, {item["ecosystem"] for item in found})
 
+    def test_manifest_discovery_ignores_test_fixture_projects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pyproject.toml").write_text("[project]\nname='actual'\n", encoding="utf-8")
+            fixture = root / "tests" / "fixtures" / "gradle-integration"
+            fixture.mkdir(parents=True)
+            (fixture / "settings.gradle.kts").write_text("", encoding="utf-8")
+            (fixture / "build.gradle.kts").write_text("", encoding="utf-8")
+            found = scan_manifests(root, "fixture")
+            self.assertEqual([("pyproject.toml", "python")],
+                             [(item["path"], item["ecosystem"]) for item in found])
+
     def test_no_manifest_coverage_requires_human_attestation(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "coverage.json"
